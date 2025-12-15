@@ -1,0 +1,18 @@
+# Exclude IDE files
+.idea/
+.vscode/
+.DS_Store
+
+# Exclude Virtual Environment
+.venv/
+venv/
+
+# Exclude Generated Output
+*.pcap
+*.cap
+rto_log.txt
+*.log
+
+# Exclude Python cache
+__pycache__/
+*.pyc
