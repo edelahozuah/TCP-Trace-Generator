@@ -73,6 +73,33 @@ Designed to generate clean, predictable traces for ease of analysis in manual ex
     *   **Immediate ACK on Gap Fill:** Crucial for exercises. If an out-of-order segment arrives and "fills a gap" in the receive buffer, an **Immediate Cumulative ACK** is generated, bypassing the Delayed ACK timer. This ensures fast recovery responsiveness in the traces.
     *   **Determinism:** Arrival events are prioritized over Timer events when occurring in the same slot.
 
+### Examples
+
+#### 1. Basic Simulation (Standard Mode)
+Send 20 segments with no loss.
+```bash
+python tcp_trace_generator.py 20
+```
+
+#### 2. Fast Retransmit Scenario
+Send 20 segments, losing segment 10.
+```bash
+python tcp_trace_generator.py 20 --loss 10
+```
+
+#### 3. Classroom Exercise (Complex)
+Classroom mode with discrete slots, fixed RTO (4 slots), custom ISNs, small MSS, and packet loss to demonstrate recovery.
+```bash
+python tcp_trace_generator.py 14 \
+  --classroom \
+  --classroom-rto-slots 4 \
+  --loss 11 \
+  --accept-out-of-order \
+  --client-isn 1024 --server-isn 2047 \
+  --client-mss 64 --server-mss 128 \
+  --ssthresh 2
+```
+
 ---
 
 <a name="español"></a>
@@ -142,3 +169,30 @@ Diseñado para generar trazas limpias y predecibles, ideales para realizar ejerc
     *   **Alineación del Timeout:** El temporizador de ACK retardado dura exactamente `1 Slot`.
     *   **ACK Inmediato por Relleno de Huecos:** Fundamental para ejercicios. Si llega un segmento desordenado que "rellena un hueco" en el buffer de recepción, se genera un **ACK Acumulativo Inmediato**, ignorando el temporizador. Esto facilita ver la recuperación rápida en la traza.
     *   **Determinismo:** Los eventos de llegada tienen prioridad sobre los temporizadores si ocurren en el mismo instante.
+
+### Ejemplos
+
+#### 1. Simulación Básica (Modo Estándar)
+Enviar 20 segmentos sin pérdidas.
+```bash
+python tcp_trace_generator.py 20
+```
+
+#### 2. Escenario de Fast Retransmit
+Enviar 20 segmentos, perdiendo el segmento 10.
+```bash
+python tcp_trace_generator.py 20 --loss 10
+```
+
+#### 3. Ejercicio de Clase (Complejo)
+Modo docente con slots discretos, RTO fijo (4 slots), ISNs personalizados, MSS pequeños y pérdida de paquetes para ver la recuperación.
+```bash
+python tcp_trace_generator.py 14 \
+  --classroom \
+  --classroom-rto-slots 4 \
+  --loss 11 \
+  --accept-out-of-order \
+  --client-isn 1024 --server-isn 2047 \
+  --client-mss 64 --server-mss 128 \
+  --ssthresh 2
+```
