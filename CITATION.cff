@@ -1,0 +1,38 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "TCP Trace Generator"
+abstract: >-
+  TCP Trace Generator is a Python/Scapy teaching tool that simulates a TCP
+  connection with Reno or Tahoe congestion control and writes both a pcap
+  capture of the exchanged segments and a CSV log of the sender's internal
+  state (cwnd, ssthresh, RTO). Its discrete-time classroom mode produces
+  clean, predictable traces that students can analyse by hand in computer
+  networks courses.
+authors:
+  - family-names: "de la Hoz"
+    given-names: "Enrique"
+    orcid: "https://orcid.org/0000-0003-4837-3837"
+    affiliation: "Departamento de Automática, Universidad de Alcalá"
+  - family-names: "Machado Zurita"
+    given-names: "Sandra"
+    orcid: "https://orcid.org/0000-0002-5746-3597"
+    affiliation: "Departamento de Automática, Universidad de Alcalá"
+  - family-names: "de la Cruz Piris"
+    given-names: "Luis"
+    orcid: "https://orcid.org/0000-0002-9570-2851"
+    affiliation: "Departamento de Automática, Universidad de Alcalá"
+version: 1.0.0
+date-released: 2026-10-10
+license: MIT
+repository-code: "https://github.com/edelahozuah/TCP-Trace-Generator"
+# doi: "10.5281/zenodo.XXXXXXX"  # Fill in with the DOI issued by Zenodo after the first release (v1.0.0)
+keywords:
+  - TCP
+  - congestion control
+  - Reno
+  - Tahoe
+  - Scapy
+  - pcap
+  - networking education
+  - computer networks teaching
