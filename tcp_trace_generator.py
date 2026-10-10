@@ -1,5 +1,6 @@
 import argparse
 import heapq
+import itertools
 import sys
 import time
 import random
@@ -25,13 +26,18 @@ EVENT_TIMEOUT = 4
 EVENT_DELAYED_ACK = 5
 
 class Event:
+    _counter = itertools.count()  # FIFO tie-breaker for events with equal time and type
+
     def __init__(self, time, type, data):
         self.time = time
         self.type = type
         self.data = data
+        self.order = next(Event._counter)
 
     def __lt__(self, other):
         if abs(self.time - other.time) < 1e-9:
+            if self.type == other.type:
+                return self.order < other.order
             return self.type < other.type
         return self.time < other.time
 
