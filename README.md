@@ -32,8 +32,6 @@ make clean     # removes venv/, test_output/ and generated files
 ```
 The tests run the generator end to end and write their output to `test_output/`.
 
-> **Note:** the test suite is currently under review (see the `v1.0-release` pull request); it does not pass on this version.
-
 ### Parameters
 
 | Argument | Type | Default | Description |
@@ -122,7 +120,7 @@ Departamento de Automática, Universidad de Alcalá:
 ### How to cite
 If you use this tool, please cite it (APA, generated from [`CITATION.cff`](CITATION.cff)):
 
-> de la Hoz, E., Machado Zurita, S., & de la Cruz Piris, L. (2026). *TCP Trace Generator* (Version 1.0.0) [Computer software]. Universidad de Alcalá. https://doi.org/10.5281/zenodo.23285054
+> de la Hoz, E., Machado Zurita, S., & de la Cruz Piris, L. (2026). *TCP Trace Generator* (Version 1.0.1) [Computer software]. Universidad de Alcalá. https://doi.org/10.5281/zenodo.23285054
 
 ### License
 This project is released under the [MIT License](LICENSE).
@@ -157,8 +155,6 @@ make test      # ejecuta las pruebas unitarias de tests/ (unittest)
 make clean     # elimina venv/, test_output/ y los ficheros generados
 ```
 Las pruebas ejecutan el generador de principio a fin y escriben su salida en `test_output/`.
-
-> **Nota:** la suite de pruebas está actualmente en revisión (véase el pull request `v1.0-release`); no pasa en esta versión.
 
 ### Parámetros
 
@@ -247,7 +243,7 @@ Departamento de Automática, Universidad de Alcalá:
 ### Cómo citar
 Si utilizas esta herramienta, cítala así (formato APA, generado a partir de [`CITATION.cff`](CITATION.cff)):
 
-> de la Hoz, E., Machado Zurita, S., & de la Cruz Piris, L. (2026). *TCP Trace Generator* (Versión 1.0.0) [Software]. Universidad de Alcalá. https://doi.org/10.5281/zenodo.23285054
+> de la Hoz, E., Machado Zurita, S., & de la Cruz Piris, L. (2026). *TCP Trace Generator* (Versión 1.0.1) [Software]. Universidad de Alcalá. https://doi.org/10.5281/zenodo.23285054
 
 ### Licencia
 Este proyecto se distribuye bajo la [licencia MIT](LICENSE).
