@@ -21,6 +21,17 @@ It implements **TCP Reno** (Slow Start, Congestion Avoidance, Fast Retransmit, F
 python tcp_trace_generator.py [segments] [options]
 ```
 
+### Installation and tests
+The `Makefile` creates a virtual environment in `venv/`, installs the pinned dependencies and runs the test suite:
+```bash
+make install   # creates venv/ and installs requirements.txt
+make test      # runs the unit tests in tests/ (unittest)
+make clean     # removes venv/, test_output/ and generated files
+```
+The tests run the generator end to end and write their output to `test_output/`.
+
+> **Note:** the test suite is currently under review (see the `v1.0-release` pull request); it does not pass on this version.
+
 ### Parameters
 
 | Argument | Type | Default | Description |
@@ -122,6 +133,17 @@ Implementa los algoritmos **TCP Reno** (Slow Start, Congestion Avoidance, Fast R
 ```bash
 python tcp_trace_generator.py [segmentos] [opciones]
 ```
+
+### Instalación y pruebas
+El `Makefile` crea un entorno virtual en `venv/`, instala las dependencias fijadas y ejecuta la suite de pruebas:
+```bash
+make install   # crea venv/ e instala requirements.txt
+make test      # ejecuta las pruebas unitarias de tests/ (unittest)
+make clean     # elimina venv/, test_output/ y los ficheros generados
+```
+Las pruebas ejecutan el generador de principio a fin y escriben su salida en `test_output/`.
+
+> **Nota:** la suite de pruebas está actualmente en revisión (véase el pull request `v1.0-release`); no pasa en esta versión.
 
 ### Parámetros
 
