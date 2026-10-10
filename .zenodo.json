@@ -1,0 +1,42 @@
+{
+  "title": "TCP Trace Generator",
+  "description": "<p>TCP Trace Generator is a Python/Scapy teaching tool that simulates a TCP connection with Reno or Tahoe congestion control and writes both a pcap capture of the exchanged segments and a CSV log of the sender's internal state (cwnd, ssthresh, RTO). Its discrete-time classroom mode produces clean, predictable traces that students can analyse by hand in computer networks courses.</p>",
+  "creators": [
+    {
+      "name": "de la Hoz, Enrique",
+      "affiliation": "Departamento de Automática, Universidad de Alcalá",
+      "orcid": "0000-0003-4837-3837"
+    },
+    {
+      "name": "Machado Zurita, Sandra",
+      "affiliation": "Departamento de Automática, Universidad de Alcalá",
+      "orcid": "0000-0002-5746-3597"
+    },
+    {
+      "name": "de la Cruz Piris, Luis",
+      "affiliation": "Departamento de Automática, Universidad de Alcalá",
+      "orcid": "0000-0002-9570-2851"
+    }
+  ],
+  "license": "MIT",
+  "upload_type": "software",
+  "access_right": "open",
+  "language": "eng",
+  "keywords": [
+    "TCP",
+    "congestion control",
+    "Reno",
+    "Tahoe",
+    "Scapy",
+    "pcap",
+    "networking education",
+    "computer networks teaching"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://edelahozuah.github.io/",
+      "relation": "isDescribedBy",
+      "resource_type": "publication-other"
+    }
+  ]
+}
