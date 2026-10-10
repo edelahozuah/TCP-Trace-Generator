@@ -100,6 +100,10 @@ python tcp_trace_generator.py 14 \
   --ssthresh 2
 ```
 
+### License
+This project is released under the [MIT License](LICENSE).
+Copyright (c) 2025 Enrique de la Hoz, Sandra Machado Zurita, Luis de la Cruz Piris.
+
 ---
 
 <a name="español"></a>
@@ -196,3 +200,7 @@ python tcp_trace_generator.py 14 \
   --client-mss 64 --server-mss 128 \
   --ssthresh 2
 ```
+
+### Licencia
+Este proyecto se distribuye bajo la [licencia MIT](LICENSE).
+Copyright (c) 2025 Enrique de la Hoz, Sandra Machado Zurita, Luis de la Cruz Piris.
