@@ -7,6 +7,8 @@
 <a name="english"></a>
 ## English
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![DOI](https://zenodo.org/badge/DOI/ZENODO_DOI_PENDIENTE.svg)](https://doi.org/ZENODO_DOI_PENDIENTE)
+
 ### Overview
 `tcp_trace_generator.py` is a Python script based on Scapy that simulates a TCP connection. It generates a PCAP file containing the captured traffic and a CSV log detailing the internal state of the simulation (cwnd, ssthresh, RTO, etc.).
 
@@ -111,6 +113,17 @@ python tcp_trace_generator.py 14 \
   --ssthresh 2
 ```
 
+### Authors
+Departamento de Automática, Universidad de Alcalá:
+*   Enrique de la Hoz — [ORCID 0000-0003-4837-3837](https://orcid.org/0000-0003-4837-3837)
+*   Sandra Machado Zurita — [ORCID 0000-0002-5746-3597](https://orcid.org/0000-0002-5746-3597)
+*   Luis de la Cruz Piris — [ORCID 0000-0002-9570-2851](https://orcid.org/0000-0002-9570-2851)
+
+### How to cite
+If you use this tool, please cite it (APA, generated from [`CITATION.cff`](CITATION.cff)):
+
+> de la Hoz, E., Machado Zurita, S., & de la Cruz Piris, L. (2026). *TCP Trace Generator* (Version 1.0.0) [Computer software]. Universidad de Alcalá. https://doi.org/ZENODO_DOI_PENDIENTE
+
 ### License
 This project is released under the [MIT License](LICENSE).
 Copyright (c) 2025 Enrique de la Hoz, Sandra Machado Zurita, Luis de la Cruz Piris.
@@ -119,6 +132,8 @@ Copyright (c) 2025 Enrique de la Hoz, Sandra Machado Zurita, Luis de la Cruz Pir
 
 <a name="español"></a>
 ## Español
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![DOI](https://zenodo.org/badge/DOI/ZENODO_DOI_PENDIENTE.svg)](https://doi.org/ZENODO_DOI_PENDIENTE)
 
 ### Descripción General
 `tcp_trace_generator.py` es un script de Python basado en Scapy que simula una conexión TCP completas. Genera un archivo PCAP con el tráfico capturado y un log CSV que detalla el estado interno de la simulación (cwnd, ssthresh, RTO, etc.).
@@ -222,6 +237,17 @@ python tcp_trace_generator.py 14 \
   --client-mss 64 --server-mss 128 \
   --ssthresh 2
 ```
+
+### Autores
+Departamento de Automática, Universidad de Alcalá:
+*   Enrique de la Hoz — [ORCID 0000-0003-4837-3837](https://orcid.org/0000-0003-4837-3837)
+*   Sandra Machado Zurita — [ORCID 0000-0002-5746-3597](https://orcid.org/0000-0002-5746-3597)
+*   Luis de la Cruz Piris — [ORCID 0000-0002-9570-2851](https://orcid.org/0000-0002-9570-2851)
+
+### Cómo citar
+Si utilizas esta herramienta, cítala así (formato APA, generado a partir de [`CITATION.cff`](CITATION.cff)):
+
+> de la Hoz, E., Machado Zurita, S., & de la Cruz Piris, L. (2026). *TCP Trace Generator* (Versión 1.0.0) [Software]. Universidad de Alcalá. https://doi.org/ZENODO_DOI_PENDIENTE
 
 ### Licencia
 Este proyecto se distribuye bajo la [licencia MIT](LICENSE).
