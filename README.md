@@ -52,6 +52,8 @@ The tests run the generator end to end and write their output to `test_output/`.
 | `--tcp-variant` | str | `reno` | TCP Congestion Control variant: `reno` or `tahoe`. |
 | `--classroom` | flag | `False` | Enables **Classroom Mode**: discrete time slots, fixed RTO, fixed latencies, formatted for teaching. |
 | `--classroom-rto-slots`| int | `3` | (Classroom Mode only) The fixed RTO value expressed in number of time slots. |
+| `--diagram` | str | — | (Classroom Mode only) Writes a tick-by-tick sequence diagram of the exchanged segments as an SVG file. See [Classroom diagram](#classroom-diagram). |
+| `--diagram-lang` | str | `es` | Language of the diagram labels: `es` (Cliente/Servidor, `VC`, modes AL/EC/RR) or `en` (Client/Server, `cwnd`, modes SS/CA/FR). |
 
 ### Operating Modes
 
@@ -86,6 +88,14 @@ Designed to generate clean, predictable traces for ease of analysis in manual ex
     *   **Timeout Alignment:** The Delayed ACK timer is set to exactly `1 Slot`.
     *   **Immediate ACK on Gap Fill:** Crucial for exercises. If an out-of-order segment arrives and "fills a gap" in the receive buffer, an **Immediate Cumulative ACK** is generated, bypassing the Delayed ACK timer. This ensures fast recovery responsiveness in the traces.
     *   **Determinism:** Arrival events are prioritized over Timer events when occurring in the same slot.
+
+### Classroom diagram
+With `--classroom`, the `--diagram FILE.svg` option draws the exchange as a tick diagram in the same style as the *Secuencias TCP* exercises of the course: one tick per time slot, two lifelines (Cliente / Servidor), each segment as an arrow that leaves at the start of its tick and arrives half a tick later, labelled `SN=… AN=… flags W=… MSS=… D=…` next to its origin. Lost segments stop half way with a red ✕. The sender's congestion window is written where it changes (`VC=4 + 1/4 EC`, with modes AL, EC and RR; with `--diagram-lang en`, `cwnd=4 + 1/4 CA` and modes SS, CA and FR), and a red brace on the client side shows the retransmission timer behind each loss: solid up to the timeout, dashed if a fast retransmission came first, labelled with the tick in which it expires (⏱). The diagram is the reference of what should be seen in the capture: open the pcap in Wireshark next to the SVG and match each segment. Sequence numbers are absolute, as in the capture with relative numbering disabled.
+
+```bash
+python tcp_trace_generator.py 14 --classroom --loss 11 --accept-out-of-order --ssthresh 2 \
+  --client-isn 1024 --server-isn 2047 --client-mss 64 --server-mss 128 --diagram ejemplo.svg
+```
 
 ### Examples
 
@@ -179,6 +189,8 @@ Las pruebas ejecutan el generador de principio a fin y escriben su salida en `te
 | `--tcp-variant` | str | `reno` | Variante de TCP: `reno` o `tahoe`. |
 | `--classroom` | flag | `False` | Activa el **Modo Classroom**: tiempo discreto, RTO fijo, latencias fijas, diseñado para ejercicios de clase. |
 | `--classroom-rto-slots`| int | `3` | (Solo Modo Classroom) El valor fijo del RTO expresado en número de ranuras de tiempo. |
+| `--diagram` | str | — | (Solo Modo Classroom) Escribe un diagrama de secuencia tic a tic con los segmentos intercambiados en un fichero SVG. Véase [Diagrama del modo aula](#diagrama-del-modo-aula). |
+| `--diagram-lang` | str | `es` | Idioma de los rótulos del diagrama: `es` (Cliente/Servidor, `VC`, modos AL/EC/RR) o `en` (Client/Server, `cwnd`, modos SS/CA/FR). |
 
 ### Modos de Funcionamiento
 #### 1. Modo Estándar (Por defecto)
@@ -212,6 +224,14 @@ Diseñado para generar trazas limpias y predecibles, ideales para realizar ejerc
     *   **Alineación del Timeout:** El temporizador de ACK retardado dura exactamente `1 Slot`.
     *   **ACK Inmediato por Relleno de Huecos:** Fundamental para ejercicios. Si llega un segmento desordenado que "rellena un hueco" en el buffer de recepción, se genera un **ACK Acumulativo Inmediato**, ignorando el temporizador. Esto facilita ver la recuperación rápida en la traza.
     *   **Determinismo:** Los eventos de llegada tienen prioridad sobre los temporizadores si ocurren en el mismo instante.
+
+### Diagrama del modo aula
+Con `--classroom`, la opción `--diagram FICHERO.svg` dibuja el intercambio como un diagrama de tics con el mismo estilo que los ejercicios de *Secuencias TCP* de la asignatura: un tic por ranura de tiempo, dos líneas de vida (Cliente / Servidor), cada segmento como una flecha que sale al comienzo de su tic y llega medio tic después, rotulada `SN=… AN=… flags W=… MSS=… D=…` junto a su origen. Los segmentos perdidos se cortan a mitad de camino con una ✕ roja. La ventana de congestión del emisor se escribe donde cambia (`VC=4 + 1/4 EC`, con los modos AL, EC y RR; con `--diagram-lang en`, `cwnd=4 + 1/4 CA` y los modos SS, CA y FR), y una llave roja en el lado del cliente muestra el temporizador de retransmisión que hay detrás de cada pérdida: continua hasta el vencimiento, punteada si antes llegó una retransmisión rápida, con el tic en que vence (⏱). El diagrama es la referencia de lo que debe observarse en la captura: ábrase el pcap en Wireshark junto al SVG y cotéjese segmento a segmento. Los números de secuencia son absolutos, como en la captura con la numeración relativa desactivada.
+
+```bash
+python tcp_trace_generator.py 14 --classroom --loss 11 --accept-out-of-order --ssthresh 2 \
+  --client-isn 1024 --server-isn 2047 --client-mss 64 --server-mss 128 --diagram ejemplo.svg
+```
 
 ### Ejemplos
 
