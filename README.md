@@ -19,6 +19,8 @@
 
 It implements **TCP Reno** (Slow Start, Congestion Avoidance, Fast Retransmit, Fast Recovery) and supports **TCP Tahoe**. It also features a special **Classroom Mode** designed for educational purposes, which enforces discrete time slots and predictable behavior.
 
+Developed for the courses *Arquitectura de Redes I* (Bachelor's Degree in Telematics Engineering) and *Arquitectura de Redes* (Bachelor's Degrees in Computer Science Engineering and in Computer Engineering) at the University of Alcalá.
+
 ### Requirements
 *   Python 3
 *   Scapy (`pip install scapy`)
@@ -152,9 +154,11 @@ Copyright (c) 2025 Enrique de la Hoz, Sandra Machado Zurita, Luis de la Cruz Pir
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23293176.svg)](https://doi.org/10.5281/zenodo.23293176)
 
 ### Descripción General
-`tcp_trace_generator.py` es un script de Python basado en Scapy que simula una conexión TCP completas. Genera un archivo PCAP con el tráfico capturado y un log CSV que detalla el estado interno de la simulación (cwnd, ssthresh, RTO, etc.).
+`tcp_trace_generator.py` es un script de Python basado en Scapy que simula una conexión TCP completa. Genera un archivo PCAP con el tráfico capturado y un log CSV que detalla el estado interno de la simulación (cwnd, ssthresh, RTO, etc.).
 
 Implementa los algoritmos **TCP Reno** (Slow Start, Congestion Avoidance, Fast Retransmit, Fast Recovery) y soporta **TCP Tahoe**. Además, incluye un **Modo Classroom (Docente)** diseñado para la enseñanza, que fuerza el uso de ranuras de tiempo discretas y comportamientos predecibles.
+
+Desarrollado para las asignaturas Arquitectura de Redes I (Grado en Ingeniería Telemática) y Arquitectura de Redes (Grado en Ingeniería Informática y Grado en Ingeniería de Computadores) de la Universidad de Alcalá.
 
 ### Requisitos
 *   Python 3
