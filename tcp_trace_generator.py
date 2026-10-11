@@ -45,8 +45,11 @@ class Event:
 class TCPSimulation:
     def __init__(self, output_file, rto_log_file, total_segments, loss_list, initial_rto=1.0, accept_ooo=False, 
                  client_isn=None, server_isn=None, client_mss=1460, server_mss=1460, ssthresh=64,
-                 client_rwnd=65535, server_rwnd=65535, tcp_variant='reno', classroom=False, classroom_rto_slots=3):
+                 client_rwnd=65535, server_rwnd=65535, tcp_variant='reno', classroom=False, classroom_rto_slots=3,
+                 diagram_file=None, diagram_lang='es'):
         self.output_file = output_file
+        self.diagram_file = diagram_file
+        self.diagram_lang = diagram_lang
         self.rto_log_file = rto_log_file
         self.total_segments = total_segments
         self.loss_list = set(loss_list)
@@ -61,6 +64,17 @@ class TCPSimulation:
         self.classroom = classroom
         self.classroom_rto_slots = classroom_rto_slots
         self.slot_duration = RTT / 2.0
+
+        # Diagram data (classroom mode): every segment with its send time, the
+        # sender's cwnd after each ACK, and the retransmission timer behind each
+        # lost segment. Rendered by render_classroom_svg().
+        self.diagram_segments = []   # {time, side, seq, ack, flags, window, mss, data, lost, retrans}
+        self.diagram_cwnd = []       # {time, text, mode}
+        self.diagram_timers = []     # {seq, send_time} for every lost segment
+        self.diagram_timer_log = []  # (armed_at, expiry) for every (re)start of the RTO timer
+        self.diagram_timeouts = []   # times at which the RTO timer actually expired
+        self.timer_armed_at = 0.0
+        self._diagram_sent_seqs = set()
         
         self.events = []
         self.packets = []
@@ -166,6 +180,8 @@ class TCPSimulation:
                              self.loss_list.remove(seg_idx) # Only drop once
                              print(f"[{self.current_time:.4f}] DROPPING Segment {seg_idx} (Seq {seq})")
                 
+                self._diagram_add(self.current_time, 'client', pkt, lost=is_lost)
+                
                 if not is_lost:
                     self.schedule(self._get_lat(), EVENT_ARRIVE_SERVER, pkt)
                     
@@ -193,6 +209,41 @@ class TCPSimulation:
         wrpcap(self.output_file, self.packets)
         print(f"Simulation finished. pcap written to {self.output_file}")
         print(f"Log written to {self.rto_log_file}")
+        if self.diagram_file:
+            with open(self.diagram_file, "w", encoding="utf-8") as fh:
+                fh.write(render_classroom_svg(self, self.diagram_lang))
+            print(f"Diagram written to {self.diagram_file}")
+
+    # ------------------------------------------------------------------
+    # Diagram bookkeeping (see render_classroom_svg)
+    # ------------------------------------------------------------------
+    def _diagram_add(self, send_time, side, pkt, lost=False):
+        tcp = pkt[TCP]
+        flags = str(tcp.flags)
+        seq = tcp.seq
+        retrans = side == 'client' and len(tcp.payload) > 0 and seq in self._diagram_sent_seqs
+        if side == 'client' and len(tcp.payload) > 0:
+            self._diagram_sent_seqs.add(seq)
+        mss = None
+        for opt in (tcp.options or []):
+            if opt[0] == 'MSS':
+                mss = opt[1]
+        self.diagram_segments.append({
+            'time': send_time, 'side': side, 'seq': seq, 'ack': tcp.ack,
+            'syn': 'S' in flags, 'ack_flag': 'A' in flags, 'fin': 'F' in flags,
+            'window': tcp.window, 'mss': mss, 'data': len(tcp.payload),
+            'lost': lost, 'retrans': retrans,
+        })
+        if lost:
+            self.diagram_timers.append({'seq': seq, 'send_time': send_time})
+
+    def _cwnd_text(self):
+        # Same notation as the classroom exercises: integer part plus the
+        # fraction of the next segment earned in congestion avoidance.
+        n = int(self.cwnd)
+        if self.state == 'CONGESTION_AVOIDANCE' and self.cwnd_cnt > 0:
+            return f"{n} + {self.cwnd_cnt}/{n}"
+        return str(n)
 
     def _establish_connection(self):
         # 1. Client Sends SYN
@@ -232,6 +283,10 @@ class TCPSimulation:
         ack.time = self.base_timestamp + tx_time_ack
         self.packets.append(ack)
         
+        self._diagram_add(tx_time_syn, 'client', syn)
+        self._diagram_add(tx_time_synack, 'server', syn_ack)
+        self._diagram_add(tx_time_ack, 'client', ack)
+
         # 6. Prepare for Data Transmission
         # Data transmission resumes from when Client finished sending ACK
         self.current_time = tx_time_ack
@@ -249,6 +304,8 @@ class TCPSimulation:
             curr += self.mss
 
         self._try_send()
+        if self.sent_times:
+            self.diagram_cwnd.insert(0, {'time': min(self.sent_times.values()), 'text': self._cwnd_text(), 'mode': self.state})
 
 
 
@@ -351,13 +408,16 @@ class TCPSimulation:
         # If classroom, tx_delay is significant.
         # Timer starts from "transmission start" -> expiry = current + delay + rto
         
+        self.timer_armed_at = self.current_time + tx_delay
         self.timer_expiry = self.current_time + tx_delay + self.rto
+        self.diagram_timer_log.append((self.timer_armed_at, self.timer_expiry))
         self.schedule(self.timer_expiry - self.current_time, EVENT_TIMEOUT, self.rto_timer_txn)
 
     def _stop_timer(self):
         self.timer_active = False
 
     def _handle_timeout(self):
+        self.diagram_timeouts.append(self.current_time)
         print(f"[{self.current_time:.4f}] TIMEOUT! cwnd: {self.cwnd} -> 1, ssthresh: {self.ssthresh} -> {max(int(self.cwnd)//2, 2)}")
         self.ssthresh = max(int(self.cwnd) // 2, 2)
         self.cwnd = 1
@@ -376,6 +436,7 @@ class TCPSimulation:
             del self.sent_times[k]
 
         self._log_event("RTO Timeout", seq=self.seq_base)
+        self.diagram_cwnd.append({'time': self.current_time, 'text': self._cwnd_text(), 'mode': self.state})
 
         # RFC 6298 Section 5.4 / Linux: after a timeout every outstanding segment is
         # considered lost. Rewind next_seq so that _try_send retransmits from seq_base
@@ -437,6 +498,7 @@ class TCPSimulation:
         ack_pkt = Ether(src=DST_MAC, dst=SRC_MAC)/IP(src=DST_IP, dst=SRC_IP)/TCP(sport=DPORT, dport=SPORT, flags="A", seq=self.ack_start+1, ack=self.expected_seq, window=self.server_rwnd)
         
         delay = self._calc_tx_delay('server')
+        self._diagram_add(self.current_time + delay, 'server', ack_pkt)
         self.schedule(delay + self._get_lat(), EVENT_ARRIVE_CLIENT, ack_pkt)
         # Note: _send_ack in original code scheduled ARRIVE_CLIENT directly.
         # Now we break it down: send delay + propagation.
@@ -517,6 +579,7 @@ class TCPSimulation:
                 self._log_event("Mode Switch: FR -> CA")
             
             self._log_event("ACK Received" if cwnd_limited else "ACK Received (rwnd-limited)", ack=ack)
+            self.diagram_cwnd.append({'time': self.current_time, 'text': self._cwnd_text(), 'mode': self.state})
             
             self._stop_timer()
             if self.seq_base < self.next_seq: # Still data in flight?
@@ -530,6 +593,7 @@ class TCPSimulation:
             if self.state == 'FAST_RECOVERY':
                 self.cwnd += 1
                 self._log_event("DupACK in FR", ack=ack)
+                self.diagram_cwnd.append({'time': self.current_time, 'text': self._cwnd_text(), 'mode': self.state})
                 self._try_send()
             else:
                 if self.dup_acks == 3:
@@ -549,6 +613,8 @@ class TCPSimulation:
                         self.cwnd = self.ssthresh + 3
                         self.state = 'FAST_RECOVERY'
                         self._log_event("Fast Retransmit (Reno)", seq=self.seq_base)
+                    
+                    self.diagram_cwnd.append({'time': self.current_time, 'text': self._cwnd_text(), 'mode': self.state})
                     
                     # Karn's: Invalidate logic
                     if self.seq_base in self.sent_times:
@@ -570,6 +636,209 @@ class TCPSimulation:
                     # We leave it running.
  
 
+# ----------------------------------------------------------------------
+# Classroom diagram: two lifelines on a grid of ticks, one tick per slot,
+# arrows leaving at the start of the sender's tick and arriving half a tick
+# later. Same layout, labels and conventions as the "Secuencias TCP"
+# exercises of the course web app, so the SVG shows what should be seen in
+# the capture.
+# ----------------------------------------------------------------------
+DIAGRAM = {
+    'tick_height': 36, 'y0': 56, 'num_width': 30, 'between': 150,
+    'char': 6.3, 'label_min': 96, 'propagation': 0.5,
+    'texts': {
+        'es': {'names': {'client': 'Cliente', 'server': 'Servidor'}, 'cwnd': 'VC',
+               'modes': {'SLOW_START': 'AL', 'CONGESTION_AVOIDANCE': 'EC', 'FAST_RECOVERY': 'RR'},
+               'title': 'Diagrama de secuencia TCP por tics'},
+        'en': {'names': {'client': 'Client', 'server': 'Server'}, 'cwnd': 'cwnd',
+               'modes': {'SLOW_START': 'SS', 'CONGESTION_AVOIDANCE': 'CA', 'FAST_RECOVERY': 'FR'},
+               'title': 'TCP tick-by-tick sequence diagram'},
+    },
+    # Light-theme colours of the web app (estilo-secuencias.css)
+    'colours': {'text': '#1c1c1c', 'subtle': '#5a5a5a', 'line': '#e2e2e2',
+                'accent': '#0046ad', 'error': '#b91c1c', 'paper': '#fff'},
+}
+
+
+def _svg_escape(text):
+    return (str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'))
+
+
+def diagram_label(seg):
+    parts = [f"SN={seg['seq']}"]
+    if seg['ack_flag']:
+        parts.append(f"AN={seg['ack']}")
+    for flag, name in (('syn', 'SYN'), ('ack_flag', 'ACK'), ('fin', 'FIN')):
+        if seg[flag]:
+            parts.append(name)
+    parts.append(f"W={seg['window']}")
+    if seg['mss'] is not None:
+        parts.append(f"MSS={seg['mss']}")
+    if seg['data']:
+        parts.append(f"D={seg['data']}")
+    return ' '.join(parts)
+
+
+def render_classroom_svg(sim, lang='es'):
+    D = DIAGRAM
+    T = D['texts'][lang]
+    C = D['colours']
+    H = D['tick_height']
+    slot = sim.slot_duration
+
+    def tick_of(t, arrival=False):
+        # Sends are aligned to the grid; arrivals fall inside a tick.
+        return (math.floor(t / slot + 1e-6) if arrival else int(round(t / slot))) + 1
+
+    def expiry_tick(t):
+        # The tick in which the retransmission would leave if the timer expired at t
+        return math.ceil(t / slot - 1e-6) + 1
+
+    def timer_in_force(t):
+        # Last (re)start of the RTO timer at or before time t
+        before = [x for x in sim.diagram_timer_log if x[0] <= t + 1e-9]
+        return before[-1] if before else None
+
+    arrows = []
+    for seg in sim.diagram_segments:
+        arrows.append({'tick': tick_of(seg['time']), 'side': seg['side'], 'label': diagram_label(seg),
+                       'lost': seg['lost'], 'seq': seg['seq'], 'retrans': seg['retrans'], 'extra': ''})
+
+    # cwnd where it changes, on the client side at the tick the ACK arrives
+    extras = {}
+    previous = None
+    for cc in sim.diagram_cwnd:
+        text = f"{T['cwnd']}={cc['text']} {T['modes'].get(cc['mode'], '')}".strip()
+        if text != previous:
+            extras[tick_of(cc['time'], arrival=True)] = text
+            previous = text
+    for tick, text in extras.items():
+        owners = [a for a in arrows if a['side'] == 'client' and a['tick'] == tick]
+        if owners:
+            owners[0]['extra'] = text
+        else:
+            arrows.append({'tick': tick, 'side': 'client', 'label': '', 'extra': text,
+                           'lost': False, 'seq': None, 'retrans': False, 'note_only': True})
+
+    # One brace per lost segment, on the sender's side, from the tick in which
+    # the timer covering the loss was (re)armed. If the timer expired before
+    # the segment was retransmitted, the brace is solid up to that timeout
+    # (new ACKs may have restarted the timer in between). Otherwise the
+    # retransmission came first (fast retransmit, or slow start after another
+    # timeout): the brace is dashed up to it and the label is the expiry of
+    # the timer in force at that moment.
+    braces = []
+    seen = {}
+    for tm in sim.diagram_timers:
+        armed = timer_in_force(tm['send_time'])
+        if armed is None:
+            continue
+        retx = [seg['time'] for seg in sim.diagram_segments if seg['side'] == 'client'
+                and seg['seq'] == tm['seq'] and seg['retrans'] and seg['time'] > tm['send_time'] + 1e-9]
+        if not retx:
+            continue
+        retx_time = min(retx)
+        start = tick_of(armed[0], arrival=True)
+        timeouts = [t for t in sim.diagram_timeouts if tm['send_time'] < t <= retx_time + 1e-9]
+        if timeouts:
+            end = expiry = expiry_tick(timeouts[0])
+            stopped = False
+        else:
+            last = timer_in_force(retx_time - 1e-6)
+            end = tick_of(retx_time)
+            expiry = expiry_tick(last[1])
+            stopped = end < expiry
+        # Several losses recovered by the same timeout share one brace
+        key = (end, expiry)
+        if key in seen:
+            seen[key]['start'] = min(seen[key]['start'], start)
+            continue
+        seen[key] = {'start': start, 'end': end, 'expiry': expiry, 'stopped': stopped}
+        braces.append(seen[key])
+
+    n_ticks = max([a['tick'] for a in arrows] + [b['end'] - 1 for b in braces] + [1])
+    n_ticks = max(n_ticks, math.ceil(max(a['tick'] for a in arrows) + D['propagation'] - 1))
+
+    width_label = {'client': D['label_min'], 'server': D['label_min']}
+    for a in arrows:
+        longest = max(len(a['label']), len(a['extra']))
+        width_label[a['side']] = max(width_label[a['side']], math.ceil(longest * D['char']) + 12)
+    x_of = {'client': D['num_width'] + width_label['client']}
+    x_of['server'] = x_of['client'] + D['between']
+    width = x_of['server'] + width_label['server'] + 6
+
+    def y_of(t):
+        return D['y0'] + (t - 1) * H
+
+    y_end = y_of(n_ticks + 1)
+    height = y_end + 12
+    mono = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+    out = []
+    out.append(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}" '
+               f'font-family="system-ui, sans-serif">')
+    out.append(f'<title>{_svg_escape(T["title"])}</title>')
+    out.append('<defs><marker id="punta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
+               f'<path d="M0,0 L10,5 L0,10 z" fill="{C["accent"]}"/></marker></defs>')
+    out.append(f'<rect x="0" y="0" width="{width}" height="{height}" fill="{C["paper"]}"/>')
+
+    for t in range(1, n_ticks + 2):
+        out.append(f'<line x1="4" y1="{y_of(t)}" x2="{width - 4}" y2="{y_of(t)}" stroke="{C["line"]}" stroke-width="1" stroke-dasharray="2 3"/>')
+        if t <= n_ticks:
+            out.append(f'<text x="{D["num_width"] / 2}" y="{y_of(t) + H / 2 + 4}" text-anchor="middle" font-size="10" '
+                       f'font-family="{mono}" fill="{C["subtle"]}">{t}</text>')
+
+    for side in ('client', 'server'):
+        x = x_of[side]
+        name = T['names'][side]
+        box = max(64, len(name) * 7.5 + 18)
+        out.append(f'<line x1="{x}" y1="{D["y0"] - 16}" x2="{x}" y2="{y_end + 6}" stroke="{C["subtle"]}" stroke-width="1.5"/>')
+        out.append(f'<rect x="{x - box / 2}" y="6" width="{box}" height="28" rx="6" fill="{C["paper"]}" stroke="{C["line"]}"/>')
+        out.append(f'<text x="{x}" y="24" text-anchor="middle" font-size="11" font-weight="700" fill="{C["text"]}">{_svg_escape(name)}</text>')
+
+    for b in braces:
+        x = x_of['client']
+        dx = 9
+        y1, y2 = y_of(b['start']), y_of(b['end'])
+        dash = ' stroke-dasharray="4 3"' if b['stopped'] else ''
+        out.append(f'<path d="M{x},{y1} h{dx} V{y2} h{-dx}" fill="none" stroke="{C["error"]}" stroke-width="1.6"{dash}/>')
+        out.append(f'<text x="{x + dx + 3}" y="{y2 - 4}" font-size="9.5" font-weight="700" fill="{C["error"]}">&#9201; {b["expiry"]}</text>')
+
+    occupied = {}
+    for a in sorted(arrows, key=lambda a: (a['tick'], a['side'])):
+        xe = x_of[a['side']]
+        xr = x_of['server' if a['side'] == 'client' else 'client']
+        y1 = y_of(a['tick'])
+        y2 = y_of(a['tick'] + D['propagation'])
+        x_label = xe - 6 if a['side'] == 'client' else xe + 6
+        anchor = 'end' if a['side'] == 'client' else 'start'
+        key = (a['tick'], a['side'])
+        k = occupied[key] = occupied.get(key, 0) + 1
+        y_label = y1 + 12 + (k - 1) * 22
+        cls = 'segmento perdido' if a['lost'] else 'segmento'
+        if a.get('note_only'):
+            cls = 'anotacion'
+        out.append(f'<g class="{cls}" data-tic="{a["tick"]}" data-lado="{a["side"]}">')
+        if a.get('note_only'):
+            pass
+        elif a['lost']:
+            xm, ym = (xe + xr) / 2, (y1 + y2) / 2
+            out.append(f'<line x1="{xe}" y1="{y1}" x2="{xm}" y2="{ym}" stroke="{C["accent"]}" stroke-width="1.5"/>')
+            out.append(f'<path d="M{xm - 6},{ym - 6} L{xm + 6},{ym + 6} M{xm - 6},{ym + 6} L{xm + 6},{ym - 6}" '
+                       f'fill="none" stroke="{C["error"]}" stroke-width="2.2"/>')
+        else:
+            out.append(f'<line x1="{xe}" y1="{y1}" x2="{xr}" y2="{y2}" stroke="{C["accent"]}" stroke-width="1.5" marker-end="url(#punta)"/>')
+        if a['label']:
+            out.append(f'<text x="{x_label}" y="{y_label}" text-anchor="{anchor}" font-size="10" font-family="{mono}" '
+                       f'fill="{C["text"]}">{_svg_escape(a["label"])}</text>')
+        if a['extra']:
+            y_extra = y_label + 11 if a['label'] else y_label
+            out.append(f'<text x="{x_label}" y="{y_extra}" text-anchor="{anchor}" font-size="9.5" font-family="{mono}" '
+                       f'fill="{C["accent"]}">{_svg_escape(a["extra"])}</text>')
+        out.append('</g>')
+    out.append('</svg>')
+    return '\n'.join(out) + '\n'
+
+
 def main():
     parser = argparse.ArgumentParser(description="TCP Trace Generator")
     parser.add_argument("segments", type=int, help="Number of segments to send")
@@ -588,8 +857,13 @@ def main():
     parser.add_argument("--tcp-variant", type=str, default="reno", choices=["reno", "tahoe"], help="TCP Variant (reno or tahoe)")
     parser.add_argument("--classroom", action="store_true", help="Enable classroom mode (discrete slots, fixed RTO)")
     parser.add_argument("--classroom-rto-slots", type=int, default=3, help="RTO in slots for classroom mode (default: 3)")
+    parser.add_argument("--diagram", type=str, default=None, metavar="FILE.svg", help="(Classroom mode only) Write a tick-by-tick sequence diagram of the exchanged segments as SVG")
+    parser.add_argument("--diagram-lang", type=str, default="es", choices=["es", "en"], help="Language of the diagram labels: es (Cliente/Servidor, VC, AL/EC/RR) or en (Client/Server, cwnd, SS/CA/FR)")
 
     args = parser.parse_args()
+
+    if args.diagram and not args.classroom:
+        parser.error("--diagram requires --classroom: the diagram is drawn in time slots (ticks)")
 
     if args.server_rwnd < args.client_mss:
         parser.error(f"--server-rwnd ({args.server_rwnd}) must be at least one client MSS "
@@ -617,7 +891,9 @@ def main():
                         server_rwnd=args.server_rwnd,
                         tcp_variant=args.tcp_variant,
                         classroom=args.classroom,
-                        classroom_rto_slots=args.classroom_rto_slots)
+                        classroom_rto_slots=args.classroom_rto_slots,
+                        diagram_file=args.diagram,
+                        diagram_lang=args.diagram_lang)
     sim.run()
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ import os
 import subprocess
 import shutil
 import csv
+import xml.etree.ElementTree as ET
 
 from scapy.all import rdpcap, TCP
 
@@ -185,6 +186,62 @@ class TestTCPTraceGenerator(unittest.TestCase):
         result = self.run_script(["5", "--server-rwnd", "1000"])
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("--server-rwnd", result.stderr)
+
+    def test_classroom_diagram_matches_capture(self):
+        """--diagram writes an SVG with one arrow per captured segment, the lost
+        segment marked, the retransmission timer brace and the cwnd notes."""
+        print("\nRunning Classroom Diagram Test...")
+        pcap_file = os.path.join(self.output_dir, "diagram.pcap")
+        log_file = os.path.join(self.output_dir, "diagram_log.txt")
+        svg_file = os.path.join(self.output_dir, "diagram.svg")
+
+        args = ["14", "--classroom", "--classroom-rto-slots", "4", "--loss", "11",
+                "--accept-out-of-order", "--client-isn", "1024", "--server-isn", "2047",
+                "--client-mss", "64", "--server-mss", "128", "--ssthresh", "2",
+                "-o", pcap_file, "--rto-log", log_file, "--diagram", svg_file]
+        result = self.run_script(args)
+        self.assertEqual(result.returncode, 0, f"Script failed with error: {result.stderr}")
+        self.assertTrue(os.path.exists(svg_file), "SVG diagram was not created")
+
+        ns = {"svg": "http://www.w3.org/2000/svg"}
+        root = ET.parse(svg_file).getroot()
+        groups = root.findall("svg:g", ns)
+        arrows = [g for g in groups if g.get("class", "").startswith("segmento")]
+        lost = [g for g in groups if g.get("class") == "segmento perdido"]
+        notes = [g for g in groups if g.get("class") == "anotacion"]
+        self.assertEqual(len(arrows), len(rdpcap(pcap_file)), "One arrow per captured segment")
+        self.assertEqual(len(lost), 1)
+        self.assertEqual(lost[0].get("data-tic"), "17")
+
+        texts = [t.text for t in root.iter("{http://www.w3.org/2000/svg}text") if t.text]
+        self.assertIn("SN=1023 SYN W=65535 MSS=64", texts)
+        self.assertIn("SN=2047 AN=1024 SYN ACK W=65535 MSS=128", texts)
+        self.assertIn("VC=1 AL", texts)
+        self.assertIn("VC=5 RR", texts)
+        self.assertTrue(any(t.startswith("\u23f1 ") for t in texts), "Timer brace label missing")
+        self.assertTrue(notes, "cwnd note without a client segment in that tick expected")
+
+    def test_classroom_diagram_english_labels(self):
+        print("\nRunning Classroom Diagram (English) Test...")
+        pcap_file = os.path.join(self.output_dir, "diagram_en.pcap")
+        log_file = os.path.join(self.output_dir, "diagram_en_log.txt")
+        svg_file = os.path.join(self.output_dir, "diagram_en.svg")
+        args = ["8", "--classroom", "--loss", "3", "--ssthresh", "2", "--client-isn", "1",
+                "-o", pcap_file, "--rto-log", log_file, "--diagram", svg_file, "--diagram-lang", "en"]
+        result = self.run_script(args)
+        self.assertEqual(result.returncode, 0, f"Script failed with error: {result.stderr}")
+        root = ET.parse(svg_file).getroot()
+        texts = [t.text for t in root.iter("{http://www.w3.org/2000/svg}text") if t.text]
+        self.assertIn("Client", texts)
+        self.assertIn("Server", texts)
+        self.assertIn("cwnd=1 SS", texts)
+        self.assertFalse(any(t.startswith("VC=") for t in texts))
+
+    def test_diagram_requires_classroom(self):
+        print("\nRunning Diagram Validation Test...")
+        result = self.run_script(["5", "--diagram", os.path.join(self.output_dir, "x.svg")])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--classroom", result.stderr)
 
 if __name__ == '__main__':
     unittest.main()
