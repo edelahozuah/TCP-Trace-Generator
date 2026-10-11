@@ -23,7 +23,7 @@ authors:
     orcid: "https://orcid.org/0000-0002-9570-2851"
     affiliation: "Departamento de Automática, Universidad de Alcalá"
 version: 1.0.1
-date-released: 2026-10-10
+date-released: 2026-10-11
 license: MIT
 repository-code: "https://github.com/edelahozuah/TCP-Trace-Generator"
 doi: "10.5281/zenodo.23285054"

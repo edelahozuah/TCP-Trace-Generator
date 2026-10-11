@@ -1,6 +1,7 @@
 import argparse
 import heapq
 import itertools
+import math
 import sys
 import time
 import random
@@ -107,6 +108,7 @@ class TCPSimulation:
         self.segments_sent_count = 0 # To track unique data segments sent
         self.data_map = {} # seq -> segment_index (1..N)
         self.sent_times = {} # seq -> timestamp (for RTT measurement)
+        self.highest_sent = self.seq_start # First seq never sent yet (SND.NXT high-water mark)
         
         # Classroom state
         self.last_tx_time_client = -1.0
@@ -237,6 +239,7 @@ class TCPSimulation:
         # Initial State
         self.seq_base = self.seq_start
         self.next_seq = self.seq_start
+        self.highest_sent = self.seq_start
         self.expected_seq = self.seq_start
         
         # Prepare Data Map
@@ -299,9 +302,19 @@ class TCPSimulation:
          else:
              return RTT / 2.0
 
+    def _send_window(self):
+        # RFC 5681 Section 3.1: the sender may transmit up to min(cwnd, rwnd) bytes
+        # beyond the oldest unacknowledged segment.
+        return min(int(self.cwnd) * self.mss, self.rwnd)
+
+    def _cwnd_limited(self):
+        # RFC 7661: cwnd should only grow while it is the factor limiting transmission,
+        # i.e. when the receiver window is not the smaller of the two.
+        return int(self.cwnd) * self.mss <= self.rwnd
+
     def _try_send(self):
-        # Send while within cwnd
-        while self.next_seq < self.seq_base + (int(self.cwnd) * self.mss):
+        # Send while within min(cwnd, rwnd)
+        while self.next_seq < self.seq_base + self._send_window():
             if self.segments_sent_count >= self.total_segments:
                 break
             
@@ -311,15 +324,17 @@ class TCPSimulation:
                 break # Should not happen
                 
             payload = "D" * self.mss # Dummy payload
-            pkt = Ether(src=SRC_MAC, dst=DST_MAC)/IP(src=SRC_IP, dst=DST_IP)/TCP(sport=SPORT, dport=DPORT, flags="PA", seq=self.next_seq, ack=1, window=self.client_rwnd)/payload
+            pkt = Ether(src=SRC_MAC, dst=DST_MAC)/IP(src=SRC_IP, dst=DST_IP)/TCP(sport=SPORT, dport=DPORT, flags="PA", seq=self.next_seq, ack=self.ack_start+1, window=self.client_rwnd)/payload
             
             # Calculate delay (stateful update)
             delay = self._calc_tx_delay('client')
             
-            # Record send time for RTT calc (if first time sending this seq)
-            if self.next_seq not in self.sent_times:
+            # Record send time for RTT calc only for data sent for the first time
+            # (Karn's algorithm: retransmissions never produce RTT samples)
+            if self.next_seq >= self.highest_sent:
                 # In classroom mode, mark actual send time (future)
                 self.sent_times[self.next_seq] = self.current_time + delay
+                self.highest_sent = self.next_seq + self.mss
             
             self.schedule(delay, EVENT_SEND, pkt) 
             
@@ -362,16 +377,12 @@ class TCPSimulation:
 
         self._log_event("RTO Timeout", seq=self.seq_base)
 
-        # Retransmit seq_base
-        payload = "D" * self.mss
-        pkt = Ether(src=SRC_MAC, dst=DST_MAC)/IP(src=SRC_IP, dst=DST_IP)/TCP(sport=SPORT, dport=DPORT, flags="PA", seq=self.seq_base, ack=1, window=self.client_rwnd)/payload
-        
-        delay = self._calc_tx_delay('client')
-        self.schedule(delay, EVENT_SEND, pkt)
-        
-        self._start_timer(delay)
-        
-        # Do NOT reset next_seq. 
+        # RFC 6298 Section 5.4 / Linux: after a timeout every outstanding segment is
+        # considered lost. Rewind next_seq so that _try_send retransmits from seq_base
+        # as far as the (now reset) cwnd allows; the rest follows in slow start.
+        self.next_seq = self.seq_base
+        self.timer_active = False
+        self._try_send()
 
     def _handle_server_rx(self, pkt):
         # Server Receive Logic
@@ -418,13 +429,12 @@ class TCPSimulation:
         self.pending_ack_count = 0
         self.delayed_ack_timer_active = False
         
-        # Calculate Dynamic Window
-        # Assume application reads in-order data immediately, but out-of-order data stays in buffer.
-        buffered_bytes = len(self.receive_buffer) * self.server_mss
-        current_server_rwnd = max(0, self.server_rwnd - buffered_bytes)
+        # The advertised window is kept constant: RFC 5681 Section 2 only counts an ACK as
+        # a duplicate if the window is unchanged (Wireshark applies the same rule), so
+        # shrinking it while buffering out-of-order data would hide the duplicate ACKs.
         
         # ACK (Server Window)
-        ack_pkt = Ether(src=DST_MAC, dst=SRC_MAC)/IP(src=DST_IP, dst=SRC_IP)/TCP(sport=DPORT, dport=SPORT, flags="A", seq=1, ack=self.expected_seq, window=current_server_rwnd)
+        ack_pkt = Ether(src=DST_MAC, dst=SRC_MAC)/IP(src=DST_IP, dst=SRC_IP)/TCP(sport=DPORT, dport=SPORT, flags="A", seq=self.ack_start+1, ack=self.expected_seq, window=self.server_rwnd)
         
         delay = self._calc_tx_delay('server')
         self.schedule(delay + self._get_lat(), EVENT_ARRIVE_CLIENT, ack_pkt)
@@ -437,6 +447,8 @@ class TCPSimulation:
 
     def _handle_client_rx(self, pkt):
         ack = pkt[TCP].ack
+        # Every ACK carries the receiver's current advertised window
+        self.rwnd = pkt[TCP].window
         
         if ack > self.seq_base:
             # NEW ACK
@@ -473,13 +485,17 @@ class TCPSimulation:
             self.segments_acked += segments_acked_count
             
             self.seq_base = ack
+            self.next_seq = max(self.next_seq, self.seq_base)
             self.dup_acks = 0
             # self.rto = 1.0 # Removed fixed reset
             
             prev_state = self.state
+            cwnd_limited = self._cwnd_limited()
             
-            # Update cwnd
-            if self.state == 'SLOW_START':
+            # Update cwnd (only while cwnd, and not rwnd, is what limits the sender)
+            if not cwnd_limited and self.state != 'FAST_RECOVERY':
+                pass # rwnd is the bottleneck: leave cwnd untouched
+            elif self.state == 'SLOW_START':
                 self.cwnd += segments_acked_count
                 if self.cwnd >= self.ssthresh:
                     self.state = 'CONGESTION_AVOIDANCE'
@@ -500,7 +516,7 @@ class TCPSimulation:
                 self.cwnd_cnt = 0
                 self._log_event("Mode Switch: FR -> CA")
             
-            self._log_event("ACK Received", ack=ack)
+            self._log_event("ACK Received" if cwnd_limited else "ACK Received (rwnd-limited)", ack=ack)
             
             self._stop_timer()
             if self.seq_base < self.next_seq: # Still data in flight?
@@ -540,7 +556,7 @@ class TCPSimulation:
                     
                     # Retransmit MISSING segment (seq_base)
                     payload = "D" * self.mss
-                    pkt = Ether(src=SRC_MAC, dst=DST_MAC)/IP(src=SRC_IP, dst=DST_IP)/TCP(sport=SPORT, dport=DPORT, flags="PA", seq=self.seq_base, ack=1, window=self.client_rwnd)/payload
+                    pkt = Ether(src=SRC_MAC, dst=DST_MAC)/IP(src=SRC_IP, dst=DST_IP)/TCP(sport=SPORT, dport=DPORT, flags="PA", seq=self.seq_base, ack=self.ack_start+1, window=self.client_rwnd)/payload
                     
                     delay = self._calc_tx_delay('client')
                     self.schedule(delay, EVENT_SEND, pkt)
@@ -574,6 +590,10 @@ def main():
     parser.add_argument("--classroom-rto-slots", type=int, default=3, help="RTO in slots for classroom mode (default: 3)")
 
     args = parser.parse_args()
+
+    if args.server_rwnd < args.client_mss:
+        parser.error(f"--server-rwnd ({args.server_rwnd}) must be at least one client MSS "
+                     f"({args.client_mss}); zero-window probing is not simulated")
     
     loss_list = []
     if args.loss:
