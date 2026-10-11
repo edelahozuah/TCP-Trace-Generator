@@ -22,3 +22,6 @@ test_output/
 *_log.txt
 tcp_reno_gen.pcap
 .pytest_cache/
+
+# Keep the worked example of the docs
+!docs/*.pcap

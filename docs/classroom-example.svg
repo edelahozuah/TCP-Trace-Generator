@@ -1,0 +1,190 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 658 896" width="658" height="896" font-family="system-ui, sans-serif">
+<title>TCP tick-by-tick sequence diagram</title>
+<defs><marker id="punta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0046ad"/></marker></defs>
+<rect x="0" y="0" width="658" height="896" fill="#fff"/>
+<line x1="4" y1="56" x2="654" y2="56" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="78.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">1</text>
+<line x1="4" y1="92" x2="654" y2="92" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="114.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">2</text>
+<line x1="4" y1="128" x2="654" y2="128" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="150.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">3</text>
+<line x1="4" y1="164" x2="654" y2="164" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="186.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">4</text>
+<line x1="4" y1="200" x2="654" y2="200" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="222.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">5</text>
+<line x1="4" y1="236" x2="654" y2="236" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="258.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">6</text>
+<line x1="4" y1="272" x2="654" y2="272" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="294.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">7</text>
+<line x1="4" y1="308" x2="654" y2="308" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="330.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">8</text>
+<line x1="4" y1="344" x2="654" y2="344" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="366.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">9</text>
+<line x1="4" y1="380" x2="654" y2="380" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="402.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">10</text>
+<line x1="4" y1="416" x2="654" y2="416" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="438.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">11</text>
+<line x1="4" y1="452" x2="654" y2="452" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="474.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">12</text>
+<line x1="4" y1="488" x2="654" y2="488" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="510.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">13</text>
+<line x1="4" y1="524" x2="654" y2="524" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="546.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">14</text>
+<line x1="4" y1="560" x2="654" y2="560" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="582.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">15</text>
+<line x1="4" y1="596" x2="654" y2="596" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="618.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">16</text>
+<line x1="4" y1="632" x2="654" y2="632" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="654.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">17</text>
+<line x1="4" y1="668" x2="654" y2="668" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="690.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">18</text>
+<line x1="4" y1="704" x2="654" y2="704" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="726.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">19</text>
+<line x1="4" y1="740" x2="654" y2="740" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="762.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">20</text>
+<line x1="4" y1="776" x2="654" y2="776" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="798.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">21</text>
+<line x1="4" y1="812" x2="654" y2="812" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="834.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">22</text>
+<line x1="4" y1="848" x2="654" y2="848" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<text x="15.0" y="870.0" text-anchor="middle" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#5a5a5a">23</text>
+<line x1="4" y1="884" x2="654" y2="884" stroke="#e2e2e2" stroke-width="1" stroke-dasharray="2 3"/>
+<line x1="244" y1="40" x2="244" y2="890" stroke="#5a5a5a" stroke-width="1.5"/>
+<rect x="212.0" y="6" width="64" height="28" rx="6" fill="#fff" stroke="#e2e2e2"/>
+<text x="244" y="24" text-anchor="middle" font-size="11" font-weight="700" fill="#1c1c1c">Client</text>
+<line x1="394" y1="40" x2="394" y2="890" stroke="#5a5a5a" stroke-width="1.5"/>
+<rect x="362.0" y="6" width="64" height="28" rx="6" fill="#fff" stroke="#e2e2e2"/>
+<text x="394" y="24" text-anchor="middle" font-size="11" font-weight="700" fill="#1c1c1c">Server</text>
+<path d="M244,596 h9 V812 h-9" fill="none" stroke="#b91c1c" stroke-width="1.6" stroke-dasharray="4 3"/>
+<text x="256" y="808" font-size="9.5" font-weight="700" fill="#b91c1c">&#9201; 23</text>
+<g class="segmento" data-tic="1" data-lado="client">
+<line x1="244" y1="56" x2="394" y2="74.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="238" y="68" text-anchor="end" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=1023 SYN W=65535 MSS=64</text>
+</g>
+<g class="segmento" data-tic="2" data-lado="server">
+<line x1="394" y1="92" x2="244" y2="110.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="400" y="104" text-anchor="start" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=2047 AN=1024 SYN ACK W=65535 MSS=128</text>
+</g>
+<g class="segmento" data-tic="3" data-lado="client">
+<line x1="244" y1="128" x2="394" y2="146.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="238" y="140" text-anchor="end" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=1024 AN=2048 ACK W=65535</text>
+</g>
+<g class="segmento" data-tic="4" data-lado="client">
+<line x1="244" y1="164" x2="394" y2="182.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="238" y="176" text-anchor="end" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=1024 AN=2048 ACK W=65535 D=64</text>
+<text x="238" y="187" text-anchor="end" font-size="9.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#0046ad">cwnd=1 SS</text>
+</g>
+<g class="anotacion" data-tic="6" data-lado="client">
+<text x="238" y="248" text-anchor="end" font-size="9.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#0046ad">cwnd=2 CA</text>
+</g>
+<g class="segmento" data-tic="6" data-lado="server">
+<line x1="394" y1="236" x2="244" y2="254.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="400" y="248" text-anchor="start" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=2048 AN=1088 ACK W=65535</text>
+</g>
+<g class="segmento" data-tic="7" data-lado="client">
+<line x1="244" y1="272" x2="394" y2="290.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="238" y="284" text-anchor="end" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=1088 AN=2048 ACK W=65535 D=64</text>
+</g>
+<g class="segmento" data-tic="8" data-lado="client">
+<line x1="244" y1="308" x2="394" y2="326.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="238" y="320" text-anchor="end" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=1152 AN=2048 ACK W=65535 D=64</text>
+</g>
+<g class="anotacion" data-tic="9" data-lado="client">
+<text x="238" y="356" text-anchor="end" font-size="9.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#0046ad">cwnd=3 CA</text>
+</g>
+<g class="segmento" data-tic="9" data-lado="server">
+<line x1="394" y1="344" x2="244" y2="362.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="400" y="356" text-anchor="start" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=2048 AN=1216 ACK W=65535</text>
+</g>
+<g class="segmento" data-tic="10" data-lado="client">
+<line x1="244" y1="380" x2="394" y2="398.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="238" y="392" text-anchor="end" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=1216 AN=2048 ACK W=65535 D=64</text>
+</g>
+<g class="segmento" data-tic="11" data-lado="client">
+<line x1="244" y1="416" x2="394" y2="434.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="238" y="428" text-anchor="end" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=1280 AN=2048 ACK W=65535 D=64</text>
+</g>
+<g class="segmento" data-tic="12" data-lado="client">
+<line x1="244" y1="452" x2="394" y2="470.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="238" y="464" text-anchor="end" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=1344 AN=2048 ACK W=65535 D=64</text>
+<text x="238" y="475" text-anchor="end" font-size="9.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#0046ad">cwnd=3 + 2/3 CA</text>
+</g>
+<g class="segmento" data-tic="12" data-lado="server">
+<line x1="394" y1="452" x2="244" y2="470.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="400" y="464" text-anchor="start" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=2048 AN=1344 ACK W=65535</text>
+</g>
+<g class="segmento" data-tic="13" data-lado="client">
+<line x1="244" y1="488" x2="394" y2="506.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="238" y="500" text-anchor="end" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=1408 AN=2048 ACK W=65535 D=64</text>
+</g>
+<g class="segmento" data-tic="14" data-lado="client">
+<line x1="244" y1="524" x2="394" y2="542.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="238" y="536" text-anchor="end" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=1472 AN=2048 ACK W=65535 D=64</text>
+<text x="238" y="547" text-anchor="end" font-size="9.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#0046ad">cwnd=4 + 1/4 CA</text>
+</g>
+<g class="segmento" data-tic="14" data-lado="server">
+<line x1="394" y1="524" x2="244" y2="542.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="400" y="536" text-anchor="start" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=2048 AN=1472 ACK W=65535</text>
+</g>
+<g class="segmento" data-tic="15" data-lado="client">
+<line x1="244" y1="560" x2="394" y2="578.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="238" y="572" text-anchor="end" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=1536 AN=2048 ACK W=65535 D=64</text>
+</g>
+<g class="segmento" data-tic="16" data-lado="client">
+<line x1="244" y1="596" x2="394" y2="614.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="238" y="608" text-anchor="end" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=1600 AN=2048 ACK W=65535 D=64</text>
+<text x="238" y="619" text-anchor="end" font-size="9.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#0046ad">cwnd=4 + 3/4 CA</text>
+</g>
+<g class="segmento" data-tic="16" data-lado="server">
+<line x1="394" y1="596" x2="244" y2="614.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="400" y="608" text-anchor="start" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=2048 AN=1600 ACK W=65535</text>
+</g>
+<g class="segmento perdido" data-tic="17" data-lado="client">
+<line x1="244" y1="632" x2="319.0" y2="641.0" stroke="#0046ad" stroke-width="1.5"/>
+<path d="M313.0,635.0 L325.0,647.0 M313.0,647.0 L325.0,635.0" fill="none" stroke="#b91c1c" stroke-width="2.2"/>
+<text x="238" y="644" text-anchor="end" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=1664 AN=2048 ACK W=65535 D=64</text>
+</g>
+<g class="segmento" data-tic="18" data-lado="client">
+<line x1="244" y1="668" x2="394" y2="686.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="238" y="680" text-anchor="end" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=1728 AN=2048 ACK W=65535 D=64</text>
+<text x="238" y="691" text-anchor="end" font-size="9.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#0046ad">cwnd=5 CA</text>
+</g>
+<g class="segmento" data-tic="18" data-lado="server">
+<line x1="394" y1="668" x2="244" y2="686.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="400" y="680" text-anchor="start" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=2048 AN=1664 ACK W=65535</text>
+</g>
+<g class="segmento" data-tic="19" data-lado="client">
+<line x1="244" y1="704" x2="394" y2="722.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="238" y="716" text-anchor="end" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=1792 AN=2048 ACK W=65535 D=64</text>
+</g>
+<g class="segmento" data-tic="19" data-lado="server">
+<line x1="394" y1="704" x2="244" y2="722.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="400" y="716" text-anchor="start" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=2048 AN=1664 ACK W=65535</text>
+</g>
+<g class="segmento" data-tic="20" data-lado="client">
+<line x1="244" y1="740" x2="394" y2="758.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="238" y="752" text-anchor="end" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=1856 AN=2048 ACK W=65535 D=64</text>
+</g>
+<g class="segmento" data-tic="20" data-lado="server">
+<line x1="394" y1="740" x2="244" y2="758.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="400" y="752" text-anchor="start" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=2048 AN=1664 ACK W=65535</text>
+</g>
+<g class="anotacion" data-tic="21" data-lado="client">
+<text x="238" y="788" text-anchor="end" font-size="9.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#0046ad">cwnd=5 FR</text>
+</g>
+<g class="segmento" data-tic="21" data-lado="server">
+<line x1="394" y1="776" x2="244" y2="794.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="400" y="788" text-anchor="start" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=2048 AN=1664 ACK W=65535</text>
+</g>
+<g class="segmento" data-tic="22" data-lado="client">
+<line x1="244" y1="812" x2="394" y2="830.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="238" y="824" text-anchor="end" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=1664 AN=2048 ACK W=65535 D=64</text>
+</g>
+<g class="anotacion" data-tic="23" data-lado="client">
+<text x="238" y="860" text-anchor="end" font-size="9.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#0046ad">cwnd=2 CA</text>
+</g>
+<g class="segmento" data-tic="23" data-lado="server">
+<line x1="394" y1="848" x2="244" y2="866.0" stroke="#0046ad" stroke-width="1.5" marker-end="url(#punta)"/>
+<text x="400" y="860" text-anchor="start" font-size="10" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#1c1c1c">SN=2048 AN=1920 ACK W=65535</text>
+</g>
+</svg>
