@@ -26,7 +26,7 @@ version: 1.0.1
 date-released: 2026-10-11
 license: MIT
 repository-code: "https://github.com/edelahozuah/TCP-Trace-Generator"
-doi: "10.5281/zenodo.23285054"
+doi: "10.5281/zenodo.23293176"
 keywords:
   - TCP
   - congestion control
