@@ -303,5 +303,51 @@ class TestFeatures(unittest.TestCase):
         self.assertEqual(sum(int(r["Retransmitidos"]) for r in rows), 1)
 
 
+    # ---- Handshake timestamps, reproducible timestamps and ssthresh units ----
+
+    def test_synack_stamped_on_arrival_at_client(self):
+        print("\nRunning SYN+ACK Timestamp Test...")
+        # The capture is taken at the client: the SYN+ACK appears when it arrives
+        # (one RTT after the SYN), just before the client's ACK
+        for name, args, synack_at in (("hs_standard", ["4"], 0.1),
+                                      ("hs_bandwidth", ["4", "--bandwidth", "10M"], 0.1),
+                                      ("hs_classroom", ["4", "--classroom"], 0.075)):
+            pkts, _ = self.generate(name, args)
+            syn, synack, ack = pkts[:3]
+            self.assertEqual([str(p[TCP].flags) for p in (syn, synack, ack)], ["S", "SA", "A"], name)
+            t_synack = float(synack.time - syn.time)
+            t_ack = float(ack.time - syn.time)
+            self.assertAlmostEqual(t_synack, synack_at, delta=0.001, msg=name)
+            self.assertGreater(t_ack, t_synack, name)
+
+    def test_start_time_makes_pcap_reproducible(self):
+        print("\nRunning Reproducible Timestamps Test...")
+        args = V3 + ["--bandwidth", "10M"]
+        a, _ = self.generate("repro_a", args + ["--start-time", "1700000000"])
+        b, _ = self.generate("repro_b", args + ["--start-time", "1700000000"])
+        c, _ = self.generate("repro_c", args)
+        with open(self.paths("repro_a")[0], "rb") as fa, open(self.paths("repro_b")[0], "rb") as fb:
+            self.assertEqual(fa.read(), fb.read())
+        self.assertEqual(int(a[0].time), 1700000000)
+        # Without --start-time the absolute time changes but the relative times do not
+        rel = lambda pkts: [p.time - pkts[0].time for p in pkts]
+        self.assertEqual(rel(a), rel(c))
+        for p in a:
+            self.assertEqual(p.time, round(p.time, 6), "timestamps are whole microseconds")
+
+    def test_ssthresh_units(self):
+        print("\nRunning ssthresh Units Test...")
+        for name, value, mss, segments in (("ss_segments", "8", 1460, 8), ("ss_kb", "64K", 1460, 44),
+                                           ("ss_kb2", "64KB", 1460, 44), ("ss_bytes", "65535B", 1460, 44),
+                                           ("ss_small_mss", "64K", 536, 122)):
+            _, log = self.generate(name, ["4", "--ssthresh", value, "--client-mss", str(mss)])
+            with open(log) as fh:
+                first = next(csv.DictReader(fh))
+            self.assertEqual(int(first["Ssthresh"]), segments, f"{value} with MSS {mss}")
+        for value in ("abc", "0", "-4", "100B"):
+            result = self.run_script(["4", "--ssthresh", value])
+            self.assertNotEqual(result.returncode, 0, value)
+            self.assertIn("--ssthresh", result.stderr)
+
 if __name__ == "__main__":
     unittest.main()
