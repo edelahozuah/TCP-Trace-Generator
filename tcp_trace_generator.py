@@ -5,17 +5,26 @@ import math
 import sys
 import time
 import random
+import socket
 from scapy.all import *
 
 # Configuration Constants
 MSS = 1460
 RTT = 0.1  # Seconds
-SRC_IP = "10.0.0.1"
-DST_IP = "10.0.0.2"
-SPORT = 12345
-DPORT = 80
+SRC_IP = "10.0.0.1"   # Default client address
+DST_IP = "10.0.0.2"   # Default server address
+SPORT = 12345         # Default client port
+DPORT = 80            # Default server port
 DELAYED_ACK_TIMEOUT = 0.2
 MIN_RTO = 0.2
+PROC_DELAY = 0.0001   # Processing delay before a host puts a segment on the wire (standard mode)
+CLOSE_DELAY = RTT     # Time the client application waits after the last ACK before closing
+SERVER_CLOSE_DELAY = 0.01  # Time between the server's ACK of the FIN and its own FIN (--close fin)
+# RFC 6298 parameters used by the RTO estimator (standard mode)
+RTO_ALPHA = 1.0 / 8
+RTO_BETA = 1.0 / 4
+RTO_K = 4
+RTO_G = 0.1           # Clock granularity term of RTO = SRTT + max(G, K*RTTVAR)
 SRC_MAC = "00:00:00:00:00:01"
 DST_MAC = "00:00:00:00:00:02"
 
@@ -25,6 +34,50 @@ EVENT_ARRIVE_SERVER = 2
 EVENT_ARRIVE_CLIENT = 3
 EVENT_TIMEOUT = 4
 EVENT_DELAYED_ACK = 5
+EVENT_CLIENT_CLOSE = 6
+EVENT_SERVER_CLOSE = 7
+
+# Labels of the per-burst summary (--summary) in each language
+SUMMARY_TEXTS = {
+    'es': {'header': ['Rafaga', 'Tramas', 'Tiempo', 'Segmentos', 'Nuevos', 'Retransmitidos',
+                      'EnVuelo', 'VC', 'Umbral', 'Modo'],
+           'modes': {'SLOW_START': 'AL', 'CONGESTION_AVOIDANCE': 'EC', 'FAST_RECOVERY': 'RR'},
+           'notes': ['Una fila por rafaga: segmentos de datos consecutivos del cliente sin ACK ni timeout entre ellos',
+                     'Tramas: numeros de trama en el pcap (primera-ultima); Tiempo: instante de salida de la primera',
+                     'Nuevos: segmentos enviados por primera vez; Retransmitidos: ya enviados antes',
+                     'EnVuelo: (SND.NXT - SND.UNA) / MSS al salir el ultimo segmento de la rafaga',
+                     'VC, Umbral y Modo: ventana de congestion (en segmentos), umbral y modo del emisor en ese instante',
+                     'Modos: AL = arranque lento, EC = evitacion de congestion, RR = recuperacion rapida']},
+    'en': {'header': ['Burst', 'Frames', 'Time', 'Segments', 'New', 'Retransmitted',
+                      'InFlight', 'cwnd', 'ssthresh', 'Mode'],
+           'modes': {'SLOW_START': 'SS', 'CONGESTION_AVOIDANCE': 'CA', 'FAST_RECOVERY': 'FR'},
+           'notes': ['One row per burst: consecutive client data segments with no ACK or timeout in between',
+                     'Frames: frame numbers in the pcap (first-last); Time: departure of the first one',
+                     'New: segments sent for the first time; Retransmitted: already sent before',
+                     'InFlight: (SND.NXT - SND.UNA) / MSS when the last segment of the burst leaves',
+                     'cwnd, ssthresh and Mode: congestion window (segments), threshold and sender mode at that instant',
+                     'Modes: SS = slow start, CA = congestion avoidance, FR = fast recovery']},
+}
+
+
+def parse_bandwidth(text):
+    """Parse a bandwidth such as 1000000, 1M, 10Mbps, 512k or 1Gbit/s into bit/s."""
+    s = str(text).strip().lower().replace(' ', '')
+    for suffix in ('bit/s', 'bits/s', 'bps', 'b/s'):
+        if s.endswith(suffix):
+            s = s[:-len(suffix)]
+            break
+    mult = 1.0
+    if s and s[-1] in 'kmg':
+        mult = {'k': 1e3, 'm': 1e6, 'g': 1e9}[s[-1]]
+        s = s[:-1]
+    try:
+        value = float(s) * mult
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid bandwidth: {text!r} (examples: 1000000, 1M, 10Mbps, 512k)")
+    if value <= 0:
+        raise argparse.ArgumentTypeError("bandwidth must be positive")
+    return value
 
 class Event:
     _counter = itertools.count()  # FIFO tie-breaker for events with equal time and type
@@ -46,24 +99,53 @@ class TCPSimulation:
     def __init__(self, output_file, rto_log_file, total_segments, loss_list, initial_rto=1.0, accept_ooo=False, 
                  client_isn=None, server_isn=None, client_mss=1460, server_mss=1460, ssthresh=64,
                  client_rwnd=65535, server_rwnd=65535, tcp_variant='reno', classroom=False, classroom_rto_slots=3,
-                 diagram_file=None, diagram_lang='es'):
+                 diagram_file=None, diagram_lang='es',
+                 client_ip=SRC_IP, server_ip=DST_IP, client_port=SPORT, server_port=DPORT,
+                 close='none', bandwidth=None, summary_file=None, rtt_log_file=None):
         self.output_file = output_file
         self.diagram_file = diagram_file
         self.diagram_lang = diagram_lang
+        self.lang = diagram_lang
         self.rto_log_file = rto_log_file
+        self.summary_file = summary_file
+        self.rtt_log_file = rtt_log_file
         self.total_segments = total_segments
         self.loss_list = set(loss_list)
         self.accept_ooo = accept_ooo
-        
+
+        self.client_ip = client_ip
+        self.server_ip = server_ip
+        self.client_port = client_port
+        self.server_port = server_port
+
         self.mss = client_mss
         self.server_mss = server_mss
         self.client_rwnd = client_rwnd
         self.server_rwnd = server_rwnd
         self.tcp_variant = tcp_variant.lower()
-        
+
         self.classroom = classroom
         self.classroom_rto_slots = classroom_rto_slots
         self.slot_duration = RTT / 2.0
+
+        # Link serialization (standard mode): each host has one link and the
+        # frames it sends are serialized one after another at `bandwidth` bit/s.
+        self.bandwidth = bandwidth
+        self.link_free = {'client': 0.0, 'server': 0.0}
+
+        # Connection close: 'none' (capture ends after the last ACK), 'fin'
+        # (FIN, ACK, FIN, ACK) or 'fin3' (FIN, FIN+ACK, ACK)
+        self.close_mode = close
+        self.closing = False        # Client has sent (or scheduled) its FIN
+        self.client_fin_seq = None  # Sequence number of the client's FIN
+        self.server_fin_seq = None  # Sequence number of the server's FIN
+
+        # Per-burst summary (--summary): one entry per data segment sent, with
+        # the sender state when it left; consecutive entries with the same
+        # burst id form a burst (see _write_summary)
+        self.burst_id = 0
+        self.summary_entries = []
+        self._summary_seen = set()
 
         # Diagram data (classroom mode): every segment with its send time, the
         # sender's cwnd after each ACK, and the retransmission timer behind each
@@ -84,17 +166,26 @@ class TCPSimulation:
         # RTO Log
         self.rto_log_handle = open(self.rto_log_file, "w")
         self.rto_log_handle.write("Time,Event,RTO,Cwnd,CwndCnt,Rwnd,Ssthresh,Mode,Seq,Ack\n")
-        
+
         # Connection State
         if client_isn is not None:
             self.seq_start = client_isn
         else:
             self.seq_start = random.randint(500, 5000)
-            
+
         if server_isn is not None:
             self.ack_start = server_isn
         else:
             self.ack_start = 0 # Default if not specified
+
+        # Sequence number of the next byte the server would send (its SYN uses ack_start)
+        self.server_seq = self.ack_start + 1
+
+        # RTT / RTO log (--rtt-log): every RTT sample and RTO computation
+        self.rtt_log_handle = None
+        if self.rtt_log_file:
+            self.rtt_log_handle = open(self.rtt_log_file, "w")
+            self._write_rtt_log_header()
         
         # Sender State
         self.cwnd = 1 # In segments (Integer)
@@ -137,8 +228,13 @@ class TCPSimulation:
         
         # Stats
         self.segments_acked = 0
-        
+
         self._log_event("Initialization")
+        if self.classroom:
+            self._log_rtt("Fixed RTO (classroom)",
+                          calc=f"RTO = {self.classroom_rto_slots} slots * {self.slot_duration:.4f} s = {self.rto:.4f} s")
+        else:
+            self._log_rtt("Initial RTO", calc=f"RTO = {self.rto:.4f} s (--initial-rto); no RTT sample yet")
 
     def schedule(self, delay, type, data):
         heapq.heappush(self.events, Event(self.current_time + delay, type, data))
@@ -181,38 +277,208 @@ class TCPSimulation:
                              print(f"[{self.current_time:.4f}] DROPPING Segment {seg_idx} (Seq {seq})")
                 
                 self._diagram_add(self.current_time, 'client', pkt, lost=is_lost)
-                
+                if len(pkt[TCP].payload) > 0:
+                    self._summary_add(pkt)
+
                 if not is_lost:
-                    self.schedule(self._get_lat(), EVENT_ARRIVE_SERVER, pkt)
-                    
+                    self.schedule(self._ser_time(pkt) + self._get_lat(), EVENT_ARRIVE_SERVER, pkt)
+
             elif ev.type == EVENT_ARRIVE_SERVER:
                 self._handle_server_rx(ev.data)
-                
+
             elif ev.type == EVENT_ARRIVE_CLIENT:
                 self._log_packet(ev.data)
                 self._handle_client_rx(ev.data)
-                
+
             elif ev.type == EVENT_TIMEOUT:
                 if self.timer_active and self.current_time >= self.timer_expiry:
                     # Verify generation
                     if ev.data == self.rto_timer_txn:
                         self._handle_timeout()
-            
+
             elif ev.type == EVENT_DELAYED_ACK:
                 if self.delayed_ack_timer_active:
                     # Verify generation to avoid zombie timers
                     if ev.data == self.ack_timer_txn:
                         self._send_ack()
-        
+
+            elif ev.type == EVENT_CLIENT_CLOSE:
+                self._send_client_fin()
+
+            elif ev.type == EVENT_SERVER_CLOSE:
+                self._send_server_fin(with_ack=False)
+
         # Finish
         self.rto_log_handle.close()
+        if self.rtt_log_handle:
+            self.rtt_log_handle.close()
         wrpcap(self.output_file, self.packets)
         print(f"Simulation finished. pcap written to {self.output_file}")
         print(f"Log written to {self.rto_log_file}")
+        if self.rtt_log_file:
+            print(f"RTT/RTO log written to {self.rtt_log_file}")
+        if self.summary_file:
+            self._write_summary()
+            print(f"Summary written to {self.summary_file}")
         if self.diagram_file:
             with open(self.diagram_file, "w", encoding="utf-8") as fh:
                 fh.write(render_classroom_svg(self, self.diagram_lang))
             print(f"Diagram written to {self.diagram_file}")
+
+    # ------------------------------------------------------------------
+    # Packet construction
+    # ------------------------------------------------------------------
+    def _client_pkt(self, flags, seq, ack, payload=None, options=None):
+        tcp = TCP(sport=self.client_port, dport=self.server_port, flags=flags, seq=seq, ack=ack,
+                  window=self.client_rwnd, options=options or [])
+        pkt = Ether(src=SRC_MAC, dst=DST_MAC) / IP(src=self.client_ip, dst=self.server_ip) / tcp
+        return pkt / payload if payload else pkt
+
+    def _server_pkt(self, flags, seq, ack, options=None):
+        tcp = TCP(sport=self.server_port, dport=self.client_port, flags=flags, seq=seq, ack=ack,
+                  window=self.server_rwnd, options=options or [])
+        return Ether(src=DST_MAC, dst=SRC_MAC) / IP(src=self.server_ip, dst=self.client_ip) / tcp
+
+    def _endpoints_text(self):
+        return (f"client={self.client_ip}:{self.client_port} server={self.server_ip}:{self.server_port}")
+
+    # ------------------------------------------------------------------
+    # Per-burst summary (--summary)
+    # ------------------------------------------------------------------
+    def _summary_add(self, pkt):
+        # Called when a client data segment is put on the wire (already in self.packets)
+        seq = pkt[TCP].seq
+        self.summary_entries.append({
+            'burst': self.burst_id,
+            'frame': len(self.packets),
+            'time': self.current_time,
+            'seq': seq,
+            'retrans': seq in self._summary_seen,
+            'in_flight': (self.next_seq - self.seq_base) // self.mss,
+            'cwnd': self._cwnd_text(),
+            'ssthresh': self.ssthresh,
+            'mode': self.state,
+        })
+        self._summary_seen.add(seq)
+
+    def _new_burst(self):
+        self.burst_id += 1
+
+    def _write_summary(self):
+        T = SUMMARY_TEXTS[self.lang]
+        rows = []
+        for e in self.summary_entries:
+            if rows and rows[-1]['burst'] == e['burst']:
+                rows[-1]['entries'].append(e)
+            else:
+                rows.append({'burst': e['burst'], 'entries': [e]})
+        with open(self.summary_file, "w", encoding="utf-8") as fh:
+            fh.write(f"# {self._endpoints_text()} mss={self.mss}\n")
+            for note in T['notes']:
+                fh.write(f"# {note}\n")
+            fh.write(','.join(T['header']) + '\n')
+            for i, row in enumerate(rows, start=1):
+                first, last = row['entries'][0], row['entries'][-1]
+                frames = f"{first['frame']}-{last['frame']}" if last['frame'] != first['frame'] else str(first['frame'])
+                retrans = sum(1 for e in row['entries'] if e['retrans'])
+                new = len(row['entries']) - retrans
+                fh.write(','.join(str(x) for x in [
+                    i, frames, f"{first['time']:.4f}", len(row['entries']), new, retrans,
+                    last['in_flight'], last['cwnd'],
+                    last['ssthresh'], T['modes'].get(last['mode'], last['mode'])]) + '\n')
+
+    # ------------------------------------------------------------------
+    # RTT / RTO log (--rtt-log)
+    # ------------------------------------------------------------------
+    def _write_rtt_log_header(self):
+        fh = self.rtt_log_handle
+        fh.write(f"# {self._endpoints_text()}\n")
+        fh.write("# Conventions (RFC 6298, standard mode):\n")
+        fh.write("#  - Times are seconds since the client's SYN, as seen at the client (capture point).\n")
+        fh.write("#  - One RTT sample per new (non-duplicate) ACK, measured on the oldest unacknowledged segment (SND.UNA):\n")
+        fh.write("#    SampleRTT = arrival time of the ACK that covers it - time of its FIRST transmission.\n")
+        fh.write("#  - Karn's algorithm: an ACK whose oldest segment was retransmitted yields no sample (row 'No sample (Karn)').\n")
+        fh.write("#  - First sample: SRTT = SampleRTT, RTTVAR = SampleRTT / 2.\n")
+        fh.write(f"#  - Then: RTTVAR = (1 - beta) * RTTVAR + beta * |SRTT - SampleRTT| with beta = {RTO_BETA}, "
+                 f"SRTT = (1 - alpha) * SRTT + alpha * SampleRTT with alpha = {RTO_ALPHA} (RTTVAR first, using the old SRTT).\n")
+        fh.write(f"#  - RTO = SRTT + max(G, K * RTTVAR) with G = {RTO_G} s and K = {RTO_K}; then RTO = max(RTO, {MIN_RTO} s).\n")
+        fh.write("#  - On a retransmission timeout the RTO is doubled (exponential backoff); the next valid sample recomputes it.\n")
+        fh.write("#  - In classroom mode the RTO is fixed (slots * slot duration) and no sample is taken.\n")
+        fh.write("Time,Event,Seq,SentAt,SampleRTT,SRTT,RTTVAR,RTO,Calc\n")
+
+    def _log_rtt(self, event, seq="", sent_at=None, sample=None, calc=""):
+        if not self.rtt_log_handle:
+            return
+        fmt = lambda v: "" if v is None else f"{v:.4f}"
+        self.rtt_log_handle.write(
+            f"{self.current_time:.4f},{event},{seq},{fmt(sent_at)},{fmt(sample)},"
+            f"{fmt(self.srtt)},{fmt(self.rttvar)},{self.rto:.4f},\"{calc}\"\n")
+
+    def _update_rto(self, sample_rtt, seq, sent_at):
+        # RFC 6298 Section 2: SRTT/RTTVAR update and RTO computation
+        if self.srtt is None:
+            self.srtt = sample_rtt
+            self.rttvar = sample_rtt / 2.0
+            calc = (f"first sample: SRTT = {sample_rtt:.4f}; RTTVAR = {sample_rtt:.4f}/2 = {self.rttvar:.4f}")
+        else:
+            old_srtt, old_rttvar = self.srtt, self.rttvar
+            self.rttvar = (1 - RTO_BETA) * old_rttvar + RTO_BETA * abs(sample_rtt - old_srtt)
+            self.srtt = (1 - RTO_ALPHA) * old_srtt + RTO_ALPHA * sample_rtt
+            calc = (f"RTTVAR = {1 - RTO_BETA:g}*{old_rttvar:.4f} + {RTO_BETA:g}*|{old_srtt:.4f} - {sample_rtt:.4f}| = {self.rttvar:.4f}; "
+                    f"SRTT = {1 - RTO_ALPHA:g}*{old_srtt:.4f} + {RTO_ALPHA:g}*{sample_rtt:.4f} = {self.srtt:.4f}")
+        raw = self.srtt + max(RTO_G, RTO_K * self.rttvar)
+        self.rto = max(MIN_RTO, raw)
+        calc += (f"; RTO = {self.srtt:.4f} + max({RTO_G}, {RTO_K}*{self.rttvar:.4f}) = {raw:.4f}")
+        if self.rto != raw:
+            calc += f" -> max({MIN_RTO}, {raw:.4f}) = {self.rto:.4f}"
+        self._log_rtt("RTT Sample", seq=seq, sent_at=sent_at, sample=sample_rtt, calc=calc)
+
+    # ------------------------------------------------------------------
+    # Connection close (--close fin | fin3)
+    # ------------------------------------------------------------------
+    def _schedule_close(self):
+        # All data acknowledged: the client application closes after CLOSE_DELAY
+        self.closing = True
+        self.schedule(CLOSE_DELAY, EVENT_CLIENT_CLOSE, None)
+
+    def _send_client_fin(self):
+        self.client_fin_seq = self.next_seq
+        fin = self._client_pkt("FA", self.client_fin_seq, self.server_seq)
+        delay = self._calc_tx_delay('client', fin)
+        self.schedule(delay, EVENT_SEND, fin)
+        self._log_event("FIN Sent", seq=self.client_fin_seq)
+
+    def _send_server_fin(self, with_ack):
+        # with_ack=True: the FIN also acknowledges the client's FIN (--close fin3)
+        self.server_fin_seq = self.server_seq
+        fin = self._server_pkt("FA", self.server_fin_seq, self.expected_seq)
+        self.server_seq += 1
+        delay = self._calc_tx_delay('server', fin)
+        self._diagram_add(self.current_time + delay, 'server', fin)
+        self.schedule(delay + self._ser_time(fin) + self._get_lat(), EVENT_ARRIVE_CLIENT, fin)
+
+    def _handle_server_fin_rx(self):
+        # The FIN consumes one sequence number and is acknowledged at once
+        self.expected_seq += 1
+        self.delayed_ack_timer_active = False
+        self.pending_ack_count = 0
+        if self.close_mode == 'fin3':
+            self._send_server_fin(with_ack=True)
+        else:
+            self._send_ack()
+            self.schedule(SERVER_CLOSE_DELAY, EVENT_SERVER_CLOSE, None)
+
+    def _handle_client_close_rx(self, pkt):
+        tcp = pkt[TCP]
+        if tcp.ack > self.seq_base:
+            self.seq_base = tcp.ack
+            self._log_event("FIN Acked", ack=tcp.ack)
+        if 'F' in str(tcp.flags):
+            self.server_fin_seq = tcp.seq
+            last_ack = self._client_pkt("A", self.client_fin_seq + 1, tcp.seq + 1)
+            delay = self._calc_tx_delay('client', last_ack)
+            self.schedule(delay, EVENT_SEND, last_ack)
+            self._log_event("FIN Received", seq=tcp.seq)
 
     # ------------------------------------------------------------------
     # Diagram bookkeeping (see render_classroom_svg)
@@ -250,36 +516,33 @@ class TCPSimulation:
         # We start at time 0.0
         self.current_time = 0.0
         
-        delay_syn = self._calc_tx_delay('client')
+        syn = self._client_pkt("S", self.seq_start - 1, 0, options=[('MSS', self.mss)])
+        delay_syn = self._calc_tx_delay('client', syn)
         tx_time_syn = self.current_time + delay_syn
-        
-        syn = Ether(src=SRC_MAC, dst=DST_MAC)/IP(src=SRC_IP, dst=DST_IP)/TCP(sport=SPORT, dport=DPORT, flags="S", seq=self.seq_start-1, window=self.client_rwnd, options=[('MSS', self.mss)])
         syn.time = self.base_timestamp + tx_time_syn
         self.packets.append(syn)
-        
+
         # 2. Server Receives SYN
-        arrival_server = tx_time_syn + self._get_lat()
-        
+        arrival_server = tx_time_syn + self._ser_time(syn) + self._get_lat()
+
         # 3. Server Sends SYN-ACK
         # Advance current time to arrival at server to calculate server's response delay
         self.current_time = arrival_server
-        delay_synack = self._calc_tx_delay('server')
+        syn_ack = self._server_pkt("SA", self.ack_start, self.seq_start, options=[('MSS', self.server_mss)])
+        delay_synack = self._calc_tx_delay('server', syn_ack)
         tx_time_synack = self.current_time + delay_synack
-        
-        syn_ack = Ether(src=DST_MAC, dst=SRC_MAC)/IP(src=DST_IP, dst=SRC_IP)/TCP(sport=DPORT, dport=SPORT, flags="SA", seq=self.ack_start, ack=self.seq_start, window=self.server_rwnd, options=[('MSS', self.server_mss)])
         syn_ack.time = self.base_timestamp + tx_time_synack
         self.packets.append(syn_ack)
-        
+
         # 4. Client Receives SYN-ACK
-        arrival_client = tx_time_synack + self._get_lat()
-        
+        arrival_client = tx_time_synack + self._ser_time(syn_ack) + self._get_lat()
+
         # 5. Client Sends ACK
         # Advance current time to arrival at client
         self.current_time = arrival_client
-        delay_ack = self._calc_tx_delay('client')
+        ack = self._client_pkt("A", self.seq_start, self.ack_start + 1)
+        delay_ack = self._calc_tx_delay('client', ack)
         tx_time_ack = self.current_time + delay_ack
-        
-        ack = Ether(src=SRC_MAC, dst=DST_MAC)/IP(src=SRC_IP, dst=DST_IP)/TCP(sport=SPORT, dport=DPORT, flags="A", seq=self.seq_start, ack=self.ack_start+1, window=self.client_rwnd)
         ack.time = self.base_timestamp + tx_time_ack
         self.packets.append(ack)
         
@@ -312,15 +575,30 @@ class TCPSimulation:
     def _log_packet(self, pkt):
         pkt.time = self.base_timestamp + self.current_time
         self.packets.append(pkt)
+        # Anything other than a client data segment (an ACK arriving, a FIN...)
+        # separates two bursts in the per-burst summary
+        if not (pkt[IP].src == self.client_ip and len(pkt[TCP].payload) > 0):
+            self._new_burst()
     
     def _log_event(self, event_name, seq="", ack=""):
         # Time,Event,RTO,Cwnd,CwndCnt,Rwnd,Ssthresh,Mode,Seq,Ack
         self.rto_log_handle.write(f"{self.current_time:.4f},{event_name},{self.rto:.4f},{self.cwnd:.2f},{self.cwnd_cnt},{self.rwnd},{self.ssthresh},{self.state},{seq},{ack}\n")
 
-    def _calc_tx_delay(self, source='client'):
+    def _ser_time(self, pkt):
+        # Serialization time of a frame on the sender's link (standard mode with --bandwidth)
+        if self.classroom or not self.bandwidth or pkt is None:
+            return 0.0
+        return len(pkt) * 8.0 / self.bandwidth
+
+    def _calc_tx_delay(self, source='client', pkt=None):
         # source: 'client' or 'server'
         if not self.classroom:
-            return 0.0001 # Tiny processing delay
+            # Processing delay, then wait until the host's link is free: frames
+            # are serialized one after another (--bandwidth); without it the
+            # link is always free and every frame leaves after PROC_DELAY.
+            start = max(self.current_time + PROC_DELAY, self.link_free[source])
+            self.link_free[source] = start + self._ser_time(pkt)
+            return start - self.current_time
         else:
             # Determine last scheduled time for this source
             last_tx_time = self.last_tx_time_client if source == 'client' else self.last_tx_time_server
@@ -372,8 +650,8 @@ class TCPSimulation:
     def _try_send(self):
         # Send while within min(cwnd, rwnd)
         while self.next_seq < self.seq_base + self._send_window():
-            if self.segments_sent_count >= self.total_segments:
-                break
+            if self.next_seq >= self.seq_start + self.total_segments * self.mss:
+                break # No more data (after a timeout next_seq is rewound, so count by sequence number)
             
             # Create Packet (Client Window)
             seg_idx = self.data_map.get(self.next_seq)
@@ -381,10 +659,10 @@ class TCPSimulation:
                 break # Should not happen
                 
             payload = "D" * self.mss # Dummy payload
-            pkt = Ether(src=SRC_MAC, dst=DST_MAC)/IP(src=SRC_IP, dst=DST_IP)/TCP(sport=SPORT, dport=DPORT, flags="PA", seq=self.next_seq, ack=self.ack_start+1, window=self.client_rwnd)/payload
-            
+            pkt = self._client_pkt("PA", self.next_seq, self.server_seq, payload)
+
             # Calculate delay (stateful update)
-            delay = self._calc_tx_delay('client')
+            delay = self._calc_tx_delay('client', pkt)
             
             # Record send time for RTT calc only for data sent for the first time
             # (Karn's algorithm: retransmissions never produce RTT samples)
@@ -426,16 +704,20 @@ class TCPSimulation:
         
         # Reset timer
         if not self.classroom:
+             old_rto = self.rto
              self.rto *= 2 # Exponential Backoff
+             self._log_rtt("Backoff", seq=self.seq_base,
+                           calc=f"timeout: RTO = 2 * {old_rto:.4f} = {self.rto:.4f}")
         else:
-             pass # Fixed RTO in classroom
-        
+             self._log_rtt("Timeout", seq=self.seq_base, calc="fixed RTO (classroom), no backoff")
+
         # Invalidate RTT measurements for all outstanding segments
         keys_to_remove = [k for k in self.sent_times if k >= self.seq_base]
         for k in keys_to_remove:
             del self.sent_times[k]
 
         self._log_event("RTO Timeout", seq=self.seq_base)
+        self._new_burst()
         self.diagram_cwnd.append({'time': self.current_time, 'text': self._cwnd_text(), 'mode': self.state})
 
         # RFC 6298 Section 5.4 / Linux: after a timeout every outstanding segment is
@@ -447,7 +729,9 @@ class TCPSimulation:
 
     def _handle_server_rx(self, pkt):
         # Server Receive Logic
-        if TCP in pkt and len(pkt[TCP].payload) > 0:
+        if TCP in pkt and 'F' in str(pkt[TCP].flags):
+            self._handle_server_fin_rx()
+        elif TCP in pkt and len(pkt[TCP].payload) > 0:
             seq = pkt[TCP].seq
             
             # Constraint: Discard out of order UNLESS accept_ooo is set
@@ -495,11 +779,11 @@ class TCPSimulation:
         # shrinking it while buffering out-of-order data would hide the duplicate ACKs.
         
         # ACK (Server Window)
-        ack_pkt = Ether(src=DST_MAC, dst=SRC_MAC)/IP(src=DST_IP, dst=SRC_IP)/TCP(sport=DPORT, dport=SPORT, flags="A", seq=self.ack_start+1, ack=self.expected_seq, window=self.server_rwnd)
-        
-        delay = self._calc_tx_delay('server')
+        ack_pkt = self._server_pkt("A", self.server_seq, self.expected_seq)
+
+        delay = self._calc_tx_delay('server', ack_pkt)
         self._diagram_add(self.current_time + delay, 'server', ack_pkt)
-        self.schedule(delay + self._get_lat(), EVENT_ARRIVE_CLIENT, ack_pkt)
+        self.schedule(delay + self._ser_time(ack_pkt) + self._get_lat(), EVENT_ARRIVE_CLIENT, ack_pkt)
         # Note: _send_ack in original code scheduled ARRIVE_CLIENT directly.
         # Now we break it down: send delay + propagation.
         # Wait, in original code: schedule(RTT/2, EVENT_ARRIVE_CLIENT, ack_pkt)
@@ -508,34 +792,28 @@ class TCPSimulation:
         # Total delay from 'now' = delay + lat.
 
     def _handle_client_rx(self, pkt):
+        if self.closing:
+            self._handle_client_close_rx(pkt)
+            return
+
         ack = pkt[TCP].ack
         # Every ACK carries the receiver's current advertised window
         self.rwnd = pkt[TCP].window
-        
+
         if ack > self.seq_base:
             # NEW ACK
-            
+
             # Message RTT calculation
             if not self.classroom:
                 # RFC 6298: Update RTT using Karn's algorithm
                 if self.seq_base in self.sent_times:
-                    sample_rtt = self.current_time - self.sent_times[self.seq_base]
-                    
-                    # Update Estimatations
-                    if self.srtt is None:
-                        # First measurement
-                        self.srtt = sample_rtt
-                        self.rttvar = sample_rtt / 2.0
-                    else:
-                        # Subsequent (Alpha=1/8, Beta=1/4)
-                        self.rttvar = 0.75 * self.rttvar + 0.25 * abs(sample_rtt - self.srtt)
-                        self.srtt = 0.875 * self.srtt + 0.125 * sample_rtt
-                        
-                    self.rto = self.srtt + max(0.1, 4 * self.rttvar) # G=0.1s granularity? Using 0.001?
-                    # RFC: RTO = SRTT + max(G, K*RTTVAR)
-                    # Ensure Min RTO
-                    self.rto = max(MIN_RTO, self.rto)
-            
+                    sent_at = self.sent_times[self.seq_base]
+                    sample_rtt = self.current_time - sent_at
+                    self._update_rto(sample_rtt, self.seq_base, sent_at)
+                else:
+                    self._log_rtt("No sample (Karn)", seq=self.seq_base,
+                                  calc="oldest unacknowledged segment was retransmitted; RTO unchanged")
+
             # Clean up sent_times for acked segments
             # Technically we can remove everything < ack
             for s in list(self.sent_times.keys()):
@@ -584,9 +862,12 @@ class TCPSimulation:
             self._stop_timer()
             if self.seq_base < self.next_seq: # Still data in flight?
                 self._start_timer() # Restarts for the NEW oldest unacked
-            
+
             self._try_send()
-            
+
+            if self.segments_acked >= self.total_segments and self.close_mode != 'none':
+                self._schedule_close()
+
         elif ack == self.seq_base:
             # Duplicate ACK
             self.dup_acks += 1
@@ -622,9 +903,9 @@ class TCPSimulation:
                     
                     # Retransmit MISSING segment (seq_base)
                     payload = "D" * self.mss
-                    pkt = Ether(src=SRC_MAC, dst=DST_MAC)/IP(src=SRC_IP, dst=DST_IP)/TCP(sport=SPORT, dport=DPORT, flags="PA", seq=self.seq_base, ack=self.ack_start+1, window=self.client_rwnd)/payload
-                    
-                    delay = self._calc_tx_delay('client')
+                    pkt = self._client_pkt("PA", self.seq_base, self.server_seq, payload)
+
+                    delay = self._calc_tx_delay('client', pkt)
                     self.schedule(delay, EVENT_SEND, pkt)
                     
                     # Restart timer to prevent immediate RTO (Double retransmit)
@@ -858,12 +1139,34 @@ def main():
     parser.add_argument("--classroom", action="store_true", help="Enable classroom mode (discrete slots, fixed RTO)")
     parser.add_argument("--classroom-rto-slots", type=int, default=3, help="RTO in slots for classroom mode (default: 3)")
     parser.add_argument("--diagram", type=str, default=None, metavar="FILE.svg", help="(Classroom mode only) Write a tick-by-tick sequence diagram of the exchanged segments as SVG")
-    parser.add_argument("--diagram-lang", type=str, default="es", choices=["es", "en"], help="Language of the diagram labels: es (Cliente/Servidor, VC, AL/EC/RR) or en (Client/Server, cwnd, SS/CA/FR)")
+    parser.add_argument("--diagram-lang", "--lang", dest="diagram_lang", type=str, default="es", choices=["es", "en"], help="Language of the diagram and summary labels: es (Cliente/Servidor, VC, AL/EC/RR) or en (Client/Server, cwnd, SS/CA/FR)")
+    parser.add_argument("--client-ip", type=str, default=SRC_IP, help=f"Client (sender) IP address (default: {SRC_IP})")
+    parser.add_argument("--server-ip", type=str, default=DST_IP, help=f"Server (receiver) IP address (default: {DST_IP})")
+    parser.add_argument("--client-port", type=int, default=SPORT, help=f"Client TCP port (default: {SPORT})")
+    parser.add_argument("--server-port", type=int, default=DPORT, help=f"Server TCP port (default: {DPORT})")
+    parser.add_argument("--close", type=str, default="none", choices=["none", "fin", "fin3"], help="Connection close after the last ACK: none (default), fin (FIN, ACK, FIN, ACK) or fin3 (FIN, FIN+ACK, ACK)")
+    parser.add_argument("--bandwidth", type=parse_bandwidth, default=None, metavar="BPS", help="(Standard mode only) Link bandwidth in bit/s, e.g. 1M, 10Mbps, 512k: frames of the same host are serialized one after another instead of leaving at the same instant")
+    parser.add_argument("--summary", type=str, default=None, metavar="FILE.csv", help="Write a per-burst summary CSV: frames, new/retransmitted segments, segments in flight, cwnd, ssthresh and mode")
+    parser.add_argument("--rtt-log", type=str, default=None, metavar="FILE.csv", help="Write a CSV with every RTT sample and RTO computation (RFC 6298), with the conventions stated in its header")
 
     args = parser.parse_args()
 
     if args.diagram and not args.classroom:
         parser.error("--diagram requires --classroom: the diagram is drawn in time slots (ticks)")
+
+    if args.bandwidth and args.classroom:
+        parser.error("--bandwidth does not apply to --classroom: in classroom mode every segment takes one slot")
+
+    for name in ("client_ip", "server_ip"):
+        try:
+            socket.inet_pton(socket.AF_INET, getattr(args, name))
+        except OSError:
+            parser.error(f"--{name.replace('_', '-')}: invalid IPv4 address {getattr(args, name)!r}")
+    if args.client_ip == args.server_ip:
+        parser.error("--client-ip and --server-ip must differ")
+    for name in ("client_port", "server_port"):
+        if not 1 <= getattr(args, name) <= 65535:
+            parser.error(f"--{name.replace('_', '-')} must be between 1 and 65535")
 
     if args.server_rwnd < args.client_mss:
         parser.error(f"--server-rwnd ({args.server_rwnd}) must be at least one client MSS "
@@ -893,7 +1196,15 @@ def main():
                         classroom=args.classroom,
                         classroom_rto_slots=args.classroom_rto_slots,
                         diagram_file=args.diagram,
-                        diagram_lang=args.diagram_lang)
+                        diagram_lang=args.diagram_lang,
+                        client_ip=args.client_ip,
+                        server_ip=args.server_ip,
+                        client_port=args.client_port,
+                        server_port=args.server_port,
+                        close=args.close,
+                        bandwidth=args.bandwidth,
+                        summary_file=args.summary,
+                        rtt_log_file=args.rtt_log)
     sim.run()
 
 if __name__ == "__main__":
