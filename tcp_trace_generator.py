@@ -7,6 +7,7 @@ import time
 import random
 import socket
 from scapy.all import *
+from scapy.utils import EDecimal
 
 # Configuration Constants
 MSS = 1460
@@ -79,6 +80,31 @@ def parse_bandwidth(text):
         raise argparse.ArgumentTypeError("bandwidth must be positive")
     return value
 
+def parse_ssthresh(text, mss):
+    """Initial ssthresh in segments: a plain number is segments (64); with a unit it is
+    bytes (64K or 64KB = 65536 B, 65535B) and is converted to whole segments of `mss`."""
+    s = str(text).strip().lower()
+    if s.endswith('kb'):
+        value, unit = s[:-2], 1024
+    elif s.endswith('k'):
+        value, unit = s[:-1], 1024
+    elif s.endswith('b'):
+        value, unit = s[:-1], 1
+    else:
+        value, unit = s, None
+    try:
+        n = int(value)
+    except ValueError:
+        raise ValueError(f"invalid ssthresh: {text!r} (examples: 64 segments, 64K, 65535B)")
+    if n <= 0:
+        raise ValueError("ssthresh must be positive")
+    if unit is None:
+        return n
+    segments = n * unit // mss
+    if segments < 1:
+        raise ValueError(f"ssthresh {text!r} is smaller than one MSS ({mss} B)")
+    return segments
+
 class Event:
     _counter = itertools.count()  # FIFO tie-breaker for events with equal time and type
 
@@ -101,7 +127,7 @@ class TCPSimulation:
                  client_rwnd=65535, server_rwnd=65535, tcp_variant='reno', classroom=False, classroom_rto_slots=3,
                  diagram_file=None, diagram_lang='es',
                  client_ip=SRC_IP, server_ip=DST_IP, client_port=SPORT, server_port=DPORT,
-                 close='none', bandwidth=None, summary_file=None, rtt_log_file=None):
+                 close='none', bandwidth=None, summary_file=None, rtt_log_file=None, start_time=None):
         self.output_file = output_file
         self.diagram_file = diagram_file
         self.diagram_lang = diagram_lang
@@ -161,7 +187,11 @@ class TCPSimulation:
         self.events = []
         self.packets = []
         self.current_time = 0.0
-        self.base_timestamp = time.time()
+        # Absolute time of the SYN in whole seconds; every timestamp is rounded to
+        # the microsecond relative to it, so the relative times (Wireshark's Time
+        # column) never depend on when the script runs, and a fixed --start-time
+        # makes the pcap reproducible byte for byte.
+        self.base_timestamp = int(time.time()) if start_time is None else int(start_time)
 
         # RTO Log
         self.rto_log_handle = open(self.rto_log_file, "w")
@@ -519,7 +549,7 @@ class TCPSimulation:
         syn = self._client_pkt("S", self.seq_start - 1, 0, options=[('MSS', self.mss)])
         delay_syn = self._calc_tx_delay('client', syn)
         tx_time_syn = self.current_time + delay_syn
-        syn.time = self.base_timestamp + tx_time_syn
+        syn.time = self._stamp(tx_time_syn)
         self.packets.append(syn)
 
         # 2. Server Receives SYN
@@ -531,11 +561,13 @@ class TCPSimulation:
         syn_ack = self._server_pkt("SA", self.ack_start, self.seq_start, options=[('MSS', self.server_mss)])
         delay_synack = self._calc_tx_delay('server', syn_ack)
         tx_time_synack = self.current_time + delay_synack
-        syn_ack.time = self.base_timestamp + tx_time_synack
-        self.packets.append(syn_ack)
 
         # 4. Client Receives SYN-ACK
+        # The capture is taken at the client, so the SYN-ACK is stamped on
+        # arrival there, like every other server segment (not when it is sent)
         arrival_client = tx_time_synack + self._ser_time(syn_ack) + self._get_lat()
+        syn_ack.time = self._stamp(arrival_client)
+        self.packets.append(syn_ack)
 
         # 5. Client Sends ACK
         # Advance current time to arrival at client
@@ -543,7 +575,7 @@ class TCPSimulation:
         ack = self._client_pkt("A", self.seq_start, self.ack_start + 1)
         delay_ack = self._calc_tx_delay('client', ack)
         tx_time_ack = self.current_time + delay_ack
-        ack.time = self.base_timestamp + tx_time_ack
+        ack.time = self._stamp(tx_time_ack)
         self.packets.append(ack)
         
         self._diagram_add(tx_time_syn, 'client', syn)
@@ -572,8 +604,12 @@ class TCPSimulation:
 
 
 
+    def _stamp(self, t):
+        # Capture timestamp for simulated time t (seconds since the SYN), exact to the microsecond
+        return EDecimal(self.base_timestamp) + EDecimal(f"{t:.6f}")
+
     def _log_packet(self, pkt):
-        pkt.time = self.base_timestamp + self.current_time
+        pkt.time = self._stamp(self.current_time)
         self.packets.append(pkt)
         # Anything other than a client data segment (an ACK arriving, a FIN...)
         # separates two bursts in the per-burst summary
@@ -1132,7 +1168,7 @@ def main():
     parser.add_argument("--server-isn", type=int, default=None, help="Server Initial Sequence Number")
     parser.add_argument("--client-mss", type=int, default=1460, help="Client MSS")
     parser.add_argument("--server-mss", type=int, default=1460, help="Server MSS")
-    parser.add_argument("--ssthresh", type=int, default=64, help="Initial Slow Start Threshold (segments)")
+    parser.add_argument("--ssthresh", type=str, default="64", help="Initial Slow Start Threshold: segments (64, the default) or bytes with a unit, converted to whole client MSS (64K = 65536 B, 65535B)")
     parser.add_argument("--client-rwnd", type=int, default=65535, help="Client Initial RWND")
     parser.add_argument("--server-rwnd", type=int, default=65535, help="Server Initial RWND (Advertised Window)")
     parser.add_argument("--tcp-variant", type=str, default="reno", choices=["reno", "tahoe"], help="TCP Variant (reno or tahoe)")
@@ -1147,6 +1183,7 @@ def main():
     parser.add_argument("--close", type=str, default="none", choices=["none", "fin", "fin3"], help="Connection close after the last ACK: none (default), fin (FIN, ACK, FIN, ACK) or fin3 (FIN, FIN+ACK, ACK)")
     parser.add_argument("--bandwidth", type=parse_bandwidth, default=None, metavar="BPS", help="(Standard mode only) Link bandwidth in bit/s, e.g. 1M, 10Mbps, 512k: frames of the same host are serialized one after another instead of leaving at the same instant")
     parser.add_argument("--summary", type=str, default=None, metavar="FILE.csv", help="Write a per-burst summary CSV: frames, new/retransmitted segments, segments in flight, cwnd, ssthresh and mode")
+    parser.add_argument("--start-time", type=int, default=None, metavar="EPOCH", help="Absolute time of the SYN in Unix seconds (default: now); fix it to get the same pcap byte for byte on every run")
     parser.add_argument("--rtt-log", type=str, default=None, metavar="FILE.csv", help="Write a CSV with every RTT sample and RTO computation (RFC 6298), with the conventions stated in its header")
 
     args = parser.parse_args()
@@ -1172,6 +1209,13 @@ def main():
         parser.error(f"--server-rwnd ({args.server_rwnd}) must be at least one client MSS "
                      f"({args.client_mss}); zero-window probing is not simulated")
     
+    try:
+        args.ssthresh = parse_ssthresh(args.ssthresh, args.client_mss)
+    except ValueError as e:
+        parser.error(f"--ssthresh: {e}")
+    if args.start_time is not None and args.start_time < 0:
+        parser.error("--start-time must be a non-negative number of seconds")
+
     loss_list = []
     if args.loss:
         parts = args.loss.split(',')
@@ -1204,7 +1248,8 @@ def main():
                         close=args.close,
                         bandwidth=args.bandwidth,
                         summary_file=args.summary,
-                        rtt_log_file=args.rtt_log)
+                        rtt_log_file=args.rtt_log,
+                        start_time=args.start_time)
     sim.run()
 
 if __name__ == "__main__":
