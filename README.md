@@ -35,7 +35,7 @@ make install   # creates venv/ and installs requirements.txt
 make test      # runs the unit tests in tests/ (unittest)
 make clean     # removes venv/, test_output/ and generated files
 ```
-The tests run the generator end to end and write their output to `test_output/`.
+The tests run the generator end to end and write their output to `test_output/`. One of them runs `tshark` (Wireshark's command-line analyser) on the generated traces and checks the labels Wireshark attaches to them (`TCP Dup ACK`, `TCP Fast Retransmission`, `TCP Retransmission` and its RTO); it is skipped when `tshark` is not installed.
 
 ### Parameters
 
@@ -58,7 +58,15 @@ The tests run the generator end to end and write their output to `test_output/`.
 | `--classroom` | flag | `False` | Enables **Classroom Mode**: discrete time slots, fixed RTO, fixed latencies, formatted for teaching. |
 | `--classroom-rto-slots`| int | `3` | (Classroom Mode only) The fixed RTO value expressed in number of time slots. |
 | `--diagram` | str | — | (Classroom Mode only) Writes a tick-by-tick sequence diagram of the exchanged segments as an SVG file. See [Classroom diagram](#classroom-diagram). |
-| `--diagram-lang` | str | `es` | Language of the diagram labels: `es` (Cliente/Servidor, `VC`, modes AL/EC/RR) or `en` (Client/Server, `cwnd`, modes SS/CA/FR). |
+| `--diagram-lang`, `--lang` | str | `es` | Language of the diagram and summary labels: `es` (Cliente/Servidor, `VC`, modes AL/EC/RR) or `en` (Client/Server, `cwnd`, modes SS/CA/FR). |
+| `--client-ip` | str | `10.0.0.1` | IPv4 address of the client (sender). See [Endpoints](#endpoints). |
+| `--server-ip` | str | `10.0.0.2` | IPv4 address of the server (receiver). |
+| `--client-port` | int | `12345` | TCP port of the client. |
+| `--server-port` | int | `80` | TCP port of the server. |
+| `--close` | str | `none` | How the connection ends after the last ACK: `none`, `fin` (FIN, ACK, FIN, ACK) or `fin3` (FIN, FIN+ACK, ACK). See [Connection close](#connection-close). |
+| `--bandwidth` | str | — | (Standard mode only) Link bandwidth in bit/s (`1000000`, `1M`, `10Mbps`, `512k`): frames of the same host are serialized one after another instead of leaving at the same instant. See [Link bandwidth](#link-bandwidth). |
+| `--summary` | str | — | Writes a CSV with one row per burst (one per RTT in the usual case): frames, new and retransmitted segments, segments in flight, cwnd, ssthresh and mode. See [Per-burst summary](#per-burst-summary). |
+| `--rtt-log` | str | — | Writes a CSV with every RTT sample and RTO computation (RFC 6298), with the conventions used stated in its header. See [RTT and RTO log](#rtt-and-rto-log). |
 
 ### Operating Modes
 
@@ -71,7 +79,7 @@ Simulates a realistic TCP implementation, following standard RFCs (closest to Li
     *   Formula: `RTO = SRTT + 4 * RTTVAR` (min 0.2s).
     *   **Karn's Algorithm:** RTT samples are ignored for retransmitted segments to prevent ambiguous measurements.
 *   **Flow Control:** The send window is `min(cwnd, rwnd)` (RFC 5681 §3.1), with rwnd taken from the last ACK received. While rwnd is the bottleneck, cwnd is not increased (RFC 7661) and the log marks those ACKs as `rwnd-limited`.
-*   **Timeout Recovery:** After an RTO every outstanding segment is considered lost (RFC 6298 §5.4). The sender rewinds to the oldest unacknowledged segment and retransmits from there in Slow Start, as cwnd allows. A single loss therefore costs at most one timeout.
+*   **Timeout Recovery:** After an RTO every outstanding segment is considered lost (RFC 6298 §5.4). The sender rewinds to the oldest unacknowledged segment and retransmits from there in Slow Start, as cwnd allows, until everything is acknowledged (also when all the data had already been sent once and the tail of the transfer was discarded by the receiver). A single loss therefore costs at most one timeout.
 *   **ACK Generation Rules:**
     *   **Delayed ACK:** Standard mechanism. Waits for 2 full segments or `DELAYED_ACK_TIMEOUT` (0.2s).
     *   **Immediate ACK:** Sent immediately on Out-of-Order arrival (Duplicate ACKs) to trigger Fast Retransmit strategies.
@@ -101,6 +109,56 @@ With `--classroom`, the `--diagram FILE.svg` option draws the exchange as a tick
 python tcp_trace_generator.py 14 --classroom --loss 11 --accept-out-of-order --ssthresh 2 \
   --client-isn 1024 --server-isn 2047 --client-mss 64 --server-mss 128 --diagram ejemplo.svg
 ```
+
+### Endpoints
+`--client-ip`, `--server-ip`, `--client-port` and `--server-port` set the addresses and ports of both ends. The client is always the sender of the data and the one that opens (SYN) and closes (first FIN) the connection; the server acknowledges. The same endpoints are written in the header of the CSV files that describe the capture (`--summary`, `--rtt-log`), so a trace generated for an exercise with its own addressing plan needs no post-processing. Both addresses must be valid IPv4 addresses and must differ. The MAC addresses are fixed (`00:00:00:00:00:01` client, `00:00:00:00:00:02` server).
+
+### Connection close
+By default the capture ends with the last ACK. With `--close fin` the client closes the connection one RTT after that ACK with the usual four segments: `FIN` from the client, `ACK` from the server, `FIN` from the server 10 ms later and the final `ACK` from the client. `--close fin3` folds the server's two segments into one `FIN+ACK` (three-segment close). The FIN consumes one sequence number on each side, so the last ACK acknowledges `ISN + data + 1`. In classroom mode the close segments go in the next free slots, and the diagram shows them. The close is never lost or retransmitted. The state log records the events `FIN Sent`, `FIN Acked` and `FIN Received`.
+
+### Link bandwidth
+In standard mode every host puts its frames on the wire as soon as they are ready, so a burst of segments leaves at the same instant. `--bandwidth` gives each host a link of that capacity: a frame cannot start until the previous one from the same host has been fully serialized (`length in bits / bandwidth`; a 1514-byte frame takes 12.1 ms at 1 Mbit/s), and it reaches the other end after its serialization time plus the propagation delay (`RTT / 2`). The timestamps in the capture are the start of each transmission, as seen by the sender. This spreads the bursts in the Stevens graph and delays the ACKs accordingly, so RTT samples grow with the burst size, as in a real network. Accepted units: `1000000`, `1M`, `10Mbps`, `512k`, `1G`. It does not apply to classroom mode, where every segment already takes one slot.
+
+### Per-burst summary
+`--summary FILE.csv` writes one row per burst of data segments: consecutive data segments from the client with no ACK arriving at the client and no timeout in between. In the usual case that is one row per RTT, which is how the exercises count things. The columns (in Spanish by default, in English with `--lang en`) are:
+
+| Column | Meaning |
+| :--- | :--- |
+| `Rafaga` / `Burst` | Burst number. |
+| `Tramas` / `Frames` | Frame numbers of the segments in the capture (`first-last`), as Wireshark numbers them. |
+| `Tiempo` / `Time` | Departure time of the first segment (seconds since the SYN). |
+| `Segmentos` / `Segments` | Segments in the burst. |
+| `Nuevos` / `New` | Segments sent for the first time. |
+| `Retransmitidos` / `Retransmitted` | Segments that had already been sent before. |
+| `EnVuelo` / `InFlight` | Segments in flight when the last segment of the burst leaves: `(SND.NXT − SND.UNA) / MSS`. During fast recovery this includes the lost segment and the segments the receiver has buffered. |
+| `VC` / `cwnd` | Congestion window in segments, in the notation of the exercises (`4 + 2/4` in congestion avoidance). |
+| `Umbral` / `ssthresh` | Slow start threshold in segments. |
+| `Modo` / `Mode` | Sender mode when the burst leaves: `AL`/`EC`/`RR` (`SS`/`CA`/`FR` in English). |
+
+The file starts with comment lines (`#`) that state the endpoints, the MSS and these conventions; skip them when loading it (`pandas.read_csv(..., comment='#')`). For the [worked example](docs/ejemplo-estandar-resumen.csv) the slow start rows show 1, 2, 4 and 8 new segments per RTT, then a burst of four segments in fast recovery (the retransmission plus three new ones, with `VC=11` and `Umbral=4`) and congestion avoidance from there.
+
+### RTT and RTO log
+`--rtt-log FILE.csv` records every RTT sample and every RTO computation of the sender, with the arithmetic written out in the `Calc` column so that a student can check it by hand. The conventions, also written in the header of the file, are:
+*   Times are seconds since the client's SYN, as seen at the client (the capture point).
+*   One sample per new ACK, measured on the oldest unacknowledged segment (`SND.UNA`): `SampleRTT` = arrival time of the ACK that covers it − time of its **first** transmission. A cumulative ACK yields one sample, not one per segment.
+*   Karn's algorithm: if the oldest unacknowledged segment had been retransmitted, the ACK yields no sample and the RTO is left as it is (`No sample (Karn)` row).
+*   First sample: `SRTT = SampleRTT`, `RTTVAR = SampleRTT / 2`. Afterwards `RTTVAR = 3/4 · RTTVAR + 1/4 · |SRTT − SampleRTT|` (with the old SRTT), then `SRTT = 7/8 · SRTT + 1/8 · SampleRTT`.
+*   `RTO = SRTT + max(G, 4 · RTTVAR)` with `G = 0.1 s`, and then `RTO = max(RTO, 0.2 s)`.
+*   On a retransmission timeout the RTO is doubled (`Backoff` row). The next valid sample recomputes it.
+*   In classroom mode the RTO is fixed and the log has a single `Fixed RTO (classroom)` row.
+
+The columns are `Time, Event, Seq, SentAt, SampleRTT, SRTT, RTTVAR, RTO, Calc`. The `RTO` column is the value the state log (`--rto-log`) shows at the same instant. [Example](docs/ejemplo-estandar-rtt.csv).
+
+### Worked example in standard mode
+The traces of the course exercises on slow start, fast retransmit and congestion avoidance are generated with a single command, with the addressing and the orderly close of the exercise statement and no post-processing:
+```bash
+python tcp_trace_generator.py 40 --loss 8 --accept-out-of-order \
+  --client-isn 2233445566 --server-isn 3344556677 \
+  --client-ip 10.0.0.2 --server-ip 10.0.0.1 --close fin \
+  -o docs/ejemplo-estandar.pcap --rto-log docs/ejemplo-estandar-estado.csv \
+  --summary docs/ejemplo-estandar-resumen.csv --rtt-log docs/ejemplo-estandar-rtt.csv
+```
+The result is in `docs/`: the [capture](docs/ejemplo-estandar.pcap) (73 frames: handshake, slow start up to 8 segments per RTT, segment 8 lost, seven duplicate ACKs, fast retransmission, congestion avoidance and the four-segment close), the [state log](docs/ejemplo-estandar-estado.csv), the [per-burst summary](docs/ejemplo-estandar-resumen.csv) and the [RTT/RTO log](docs/ejemplo-estandar-rtt.csv). Opened in Wireshark, frames 23 to 29 are labelled `TCP Dup ACK #1` to `#7` and frame 30 `TCP Fast Retransmission`. The RTO scenario of the same exercises is `24 --loss 8-15 --close fin`: segments 8 to 15 are lost in one burst, no duplicate ACK arrives and Wireshark labels the eight retransmissions after the timeout as `TCP Retransmission`, with an RTO equal to the one in the log.
 
 ### Examples
 
@@ -172,7 +230,7 @@ make install   # crea venv/ e instala requirements.txt
 make test      # ejecuta las pruebas unitarias de tests/ (unittest)
 make clean     # elimina venv/, test_output/ y los ficheros generados
 ```
-Las pruebas ejecutan el generador de principio a fin y escriben su salida en `test_output/`.
+Las pruebas ejecutan el generador de principio a fin y escriben su salida en `test_output/`. Una de ellas pasa `tshark` (el analizador de línea de órdenes de Wireshark) sobre las trazas generadas y comprueba las etiquetas que Wireshark les asigna (`TCP Dup ACK`, `TCP Fast Retransmission`, `TCP Retransmission` y su RTO); se omite si `tshark` no está instalado.
 
 ### Parámetros
 
@@ -195,7 +253,15 @@ Las pruebas ejecutan el generador de principio a fin y escriben su salida en `te
 | `--classroom` | flag | `False` | Activa el **Modo Classroom**: tiempo discreto, RTO fijo, latencias fijas, diseñado para ejercicios de clase. |
 | `--classroom-rto-slots`| int | `3` | (Solo Modo Classroom) El valor fijo del RTO expresado en número de ranuras de tiempo. |
 | `--diagram` | str | — | (Solo Modo Classroom) Escribe un diagrama de secuencia tic a tic con los segmentos intercambiados en un fichero SVG. Véase [Diagrama del modo aula](#diagrama-del-modo-aula). |
-| `--diagram-lang` | str | `es` | Idioma de los rótulos del diagrama: `es` (Cliente/Servidor, `VC`, modos AL/EC/RR) o `en` (Client/Server, `cwnd`, modos SS/CA/FR). |
+| `--diagram-lang`, `--lang` | str | `es` | Idioma de los rótulos del diagrama y del resumen: `es` (Cliente/Servidor, `VC`, modos AL/EC/RR) o `en` (Client/Server, `cwnd`, modos SS/CA/FR). |
+| `--client-ip` | str | `10.0.0.1` | Dirección IPv4 del cliente (emisor). Véase [Extremos](#extremos). |
+| `--server-ip` | str | `10.0.0.2` | Dirección IPv4 del servidor (receptor). |
+| `--client-port` | int | `12345` | Puerto TCP del cliente. |
+| `--server-port` | int | `80` | Puerto TCP del servidor. |
+| `--close` | str | `none` | Cómo termina la conexión tras el último ACK: `none`, `fin` (FIN, ACK, FIN, ACK) o `fin3` (FIN, FIN+ACK, ACK). Véase [Cierre de la conexión](#cierre-de-la-conexión). |
+| `--bandwidth` | str | — | (Solo modo estándar) Ancho de banda del enlace en bit/s (`1000000`, `1M`, `10Mbps`, `512k`): las tramas de un mismo equipo se serializan una tras otra en lugar de salir en el mismo instante. Véase [Ancho de banda del enlace](#ancho-de-banda-del-enlace). |
+| `--summary` | str | — | Escribe un CSV con una fila por ráfaga (una por RTT en el caso habitual): tramas, segmentos nuevos y retransmitidos, segmentos en vuelo, VC, umbral y modo. Véase [Resumen por ráfaga](#resumen-por-ráfaga). |
+| `--rtt-log` | str | — | Escribe un CSV con cada muestra de RTT y cada cálculo del RTO (RFC 6298), con las convenciones empleadas en su cabecera. Véase [Registro de RTT y RTO](#registro-de-rtt-y-rto). |
 
 ### Modos de Funcionamiento
 #### 1. Modo Estándar (Por defecto)
@@ -207,7 +273,7 @@ Simula una implementación TCP realista, siguiendo los RFCs estándar (comportam
     *   Fórmula: `RTO = SRTT + 4 * RTTVAR` (mínimo 0.2s).
     *   **Algoritmo de Karn:** Las muestras de RTT se ignoran para segmentos retransmitidos para evitar mediciones ambiguas.
 *   **Control de Flujo:** La ventana de envío es `min(cwnd, rwnd)` (RFC 5681 §3.1), con rwnd tomada del último ACK recibido. Mientras rwnd sea el cuello de botella, cwnd no crece (RFC 7661) y el registro marca esos ACK como `rwnd-limited`.
-*   **Recuperación tras Timeout:** Tras un RTO se consideran perdidos todos los segmentos pendientes (RFC 6298 §5.4). El emisor retrocede al segmento más antiguo sin confirmar y retransmite desde ahí en Slow Start, según permita cwnd. Una pérdida aislada cuesta como máximo un timeout.
+*   **Recuperación tras Timeout:** Tras un RTO se consideran perdidos todos los segmentos pendientes (RFC 6298 §5.4). El emisor retrocede al segmento más antiguo sin confirmar y retransmite desde ahí en Slow Start, según permita cwnd, hasta que todo queda confirmado (también cuando todos los datos ya se habían enviado una vez y el receptor descartó la cola de la transferencia). Una pérdida aislada cuesta como máximo un timeout.
 *   **Reglas de Generación de ACKs:**
     *   **ACK Retardado:** Mecanismo estándar. Espera confirmación de 2 segmentos o un timeout de `DELAYED_ACK_TIMEOUT` (0.2s).
     *   **ACK Inmediato:** Se envía inmediatamente al recibir segmentos fuera de orden (Duplicate ACK) para disparar el Fast Retransmit.
@@ -237,6 +303,56 @@ Con `--classroom`, la opción `--diagram FICHERO.svg` dibuja el intercambio como
 python tcp_trace_generator.py 14 --classroom --loss 11 --accept-out-of-order --ssthresh 2 \
   --client-isn 1024 --server-isn 2047 --client-mss 64 --server-mss 128 --diagram ejemplo.svg
 ```
+
+### Extremos
+`--client-ip`, `--server-ip`, `--client-port` y `--server-port` fijan las direcciones y los puertos de ambos extremos. El cliente es siempre el que envía los datos y el que abre (SYN) y cierra (primer FIN) la conexión; el servidor asiente. Los mismos extremos se escriben en la cabecera de los CSV que describen la captura (`--summary`, `--rtt-log`), de modo que una traza generada para un enunciado con su propio plan de direccionamiento no necesita posprocesado. Ambas direcciones deben ser IPv4 válidas y distintas. Las direcciones MAC son fijas (`00:00:00:00:00:01` cliente, `00:00:00:00:00:02` servidor).
+
+### Cierre de la conexión
+Por defecto la captura termina con el último ACK. Con `--close fin` el cliente cierra la conexión un RTT después de ese ACK con los cuatro segmentos habituales: `FIN` del cliente, `ACK` del servidor, `FIN` del servidor 10 ms después y `ACK` final del cliente. `--close fin3` funde los dos segmentos del servidor en un único `FIN+ACK` (cierre en tres segmentos). El FIN consume un número de secuencia en cada sentido, así que el último ACK confirma `ISN + datos + 1`. En modo aula los segmentos del cierre ocupan las siguientes ranuras libres y aparecen en el diagrama. El cierre nunca se pierde ni se retransmite. El registro de estado anota los eventos `FIN Sent`, `FIN Acked` y `FIN Received`.
+
+### Ancho de banda del enlace
+En modo estándar cada equipo pone sus tramas en el medio en cuanto están listas, así que una ráfaga de segmentos sale en el mismo instante. `--bandwidth` da a cada equipo un enlace de esa capacidad: una trama no puede empezar hasta que la anterior del mismo equipo se ha serializado por completo (`longitud en bits / ancho de banda`; una trama de 1514 bytes tarda 12,1 ms a 1 Mbit/s) y llega al otro extremo tras su tiempo de serialización más el retardo de propagación (`RTT / 2`). Las marcas de tiempo de la captura son el comienzo de cada transmisión, vistas desde el emisor. Así las ráfagas se extienden en el gráfico Stevens y los ACK se retrasan en consecuencia, con lo que las muestras de RTT crecen con el tamaño de la ráfaga, como en una red real. Unidades admitidas: `1000000`, `1M`, `10Mbps`, `512k`, `1G`. No se aplica al modo aula, donde cada segmento ya ocupa una ranura.
+
+### Resumen por ráfaga
+`--summary FICHERO.csv` escribe una fila por ráfaga de segmentos de datos: segmentos de datos consecutivos del cliente sin que llegue un ACK al cliente ni venza el temporizador entre ellos. En el caso habitual es una fila por RTT, que es como se cuentan las cosas en los ejercicios. Las columnas (en español por defecto, en inglés con `--lang en`) son:
+
+| Columna | Significado |
+| :--- | :--- |
+| `Rafaga` / `Burst` | Número de ráfaga. |
+| `Tramas` / `Frames` | Números de trama de los segmentos en la captura (`primera-última`), tal como los numera Wireshark. |
+| `Tiempo` / `Time` | Instante de salida del primer segmento (segundos desde el SYN). |
+| `Segmentos` / `Segments` | Segmentos de la ráfaga. |
+| `Nuevos` / `New` | Segmentos enviados por primera vez. |
+| `Retransmitidos` / `Retransmitted` | Segmentos que ya se habían enviado antes. |
+| `EnVuelo` / `InFlight` | Segmentos en vuelo al salir el último segmento de la ráfaga: `(SND.NXT − SND.UNA) / MSS`. Durante la recuperación rápida incluye el segmento perdido y los que el receptor tiene en el buffer. |
+| `VC` / `cwnd` | Ventana de congestión en segmentos, con la notación de los ejercicios (`4 + 2/4` en evitación de congestión). |
+| `Umbral` / `ssthresh` | Umbral de arranque lento en segmentos. |
+| `Modo` / `Mode` | Modo del emisor al salir la ráfaga: `AL`/`EC`/`RR` (`SS`/`CA`/`FR` en inglés). |
+
+El fichero empieza con líneas de comentario (`#`) con los extremos, el MSS y estas convenciones; hay que saltarlas al cargarlo (`pandas.read_csv(..., comment='#')`). En el [ejemplo comentado](docs/ejemplo-estandar-resumen.csv) las filas del arranque lento muestran 1, 2, 4 y 8 segmentos nuevos por RTT, después una ráfaga de cuatro segmentos en recuperación rápida (la retransmisión más tres nuevos, con `VC=11` y `Umbral=4`) y a partir de ahí evitación de congestión.
+
+### Registro de RTT y RTO
+`--rtt-log FICHERO.csv` anota cada muestra de RTT y cada cálculo del RTO del emisor, con la aritmética escrita en la columna `Calc` para que un estudiante pueda comprobarla a mano. Las convenciones, escritas también en la cabecera del fichero, son:
+*   Los tiempos son segundos desde el SYN del cliente, vistos en el cliente (el punto de captura).
+*   Una muestra por cada ACK nuevo, medida sobre el segmento pendiente más antiguo (`SND.UNA`): `SampleRTT` = instante de llegada del ACK que lo confirma − instante de su **primera** transmisión. Un ACK acumulativo produce una muestra, no una por segmento.
+*   Algoritmo de Karn: si el segmento pendiente más antiguo se había retransmitido, el ACK no produce muestra y el RTO se deja como está (fila `No sample (Karn)`).
+*   Primera muestra: `SRTT = SampleRTT`, `RTTVAR = SampleRTT / 2`. Después `RTTVAR = 3/4 · RTTVAR + 1/4 · |SRTT − SampleRTT|` (con el SRTT anterior) y luego `SRTT = 7/8 · SRTT + 1/8 · SampleRTT`.
+*   `RTO = SRTT + max(G, 4 · RTTVAR)` con `G = 0,1 s`, y después `RTO = max(RTO, 0,2 s)`.
+*   Al vencer el temporizador de retransmisión el RTO se duplica (fila `Backoff`). La siguiente muestra válida lo recalcula.
+*   En modo aula el RTO es fijo y el registro tiene una única fila `Fixed RTO (classroom)`.
+
+Las columnas son `Time, Event, Seq, SentAt, SampleRTT, SRTT, RTTVAR, RTO, Calc`. La columna `RTO` es el valor que el registro de estado (`--rto-log`) muestra en ese mismo instante. [Ejemplo](docs/ejemplo-estandar-rtt.csv).
+
+### Ejemplo comentado en modo estándar
+Las trazas de los ejercicios de la asignatura sobre arranque lento, retransmisión rápida y evitación de congestión se generan con una sola orden, con el direccionamiento y el cierre ordenado del enunciado y sin posprocesado:
+```bash
+python tcp_trace_generator.py 40 --loss 8 --accept-out-of-order \
+  --client-isn 2233445566 --server-isn 3344556677 \
+  --client-ip 10.0.0.2 --server-ip 10.0.0.1 --close fin \
+  -o docs/ejemplo-estandar.pcap --rto-log docs/ejemplo-estandar-estado.csv \
+  --summary docs/ejemplo-estandar-resumen.csv --rtt-log docs/ejemplo-estandar-rtt.csv
+```
+El resultado está en `docs/`: la [captura](docs/ejemplo-estandar.pcap) (73 tramas: establecimiento, arranque lento hasta 8 segmentos por RTT, pérdida del segmento 8, siete ACK duplicados, retransmisión rápida, evitación de congestión y cierre en cuatro segmentos), el [registro de estado](docs/ejemplo-estandar-estado.csv), el [resumen por ráfaga](docs/ejemplo-estandar-resumen.csv) y el [registro de RTT/RTO](docs/ejemplo-estandar-rtt.csv). Abierta en Wireshark, las tramas 23 a 29 llevan la etiqueta `TCP Dup ACK #1` a `#7` y la trama 30 `TCP Fast Retransmission`. El escenario de RTO de los mismos ejercicios es `24 --loss 8-15 --close fin`: se pierden de golpe los segmentos 8 a 15, no llega ningún ACK duplicado y Wireshark etiqueta como `TCP Retransmission` las ocho retransmisiones posteriores al vencimiento, con un RTO igual al del registro.
 
 ### Ejemplos
 
