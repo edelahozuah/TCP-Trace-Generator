@@ -201,6 +201,9 @@ If you use this tool, please cite it (APA, generated from [`CITATION.cff`](CITAT
 
 > de la Hoz, E., Machado Zurita, S., & de la Cruz Piris, L. (2026). *TCP Trace Generator* (Version 1.0.1) [Computer software]. Universidad de Alcalá. https://doi.org/10.5281/zenodo.23293176
 
+### Acknowledgements
+This work has been supported by the teaching innovation project UAH/EV1827, «Hacia una Integración Crítica y Ética de la Inteligencia Artificial Generativa en el Aprendizaje en 'Laboratorio de Redes, Sistemas y Servicios'», funded by the Universidad de Alcalá through its 2026 call for Teaching Innovation Projects (Proyectos de Innovación Docente).
+
 ### License
 This project is released under the [MIT License](LICENSE).
 Copyright (c) 2025 Enrique de la Hoz, Sandra Machado Zurita, Luis de la Cruz Piris.
@@ -397,6 +400,9 @@ Departamento de Automática, Universidad de Alcalá:
 Si utilizas esta herramienta, cítala así (formato APA, generado a partir de [`CITATION.cff`](CITATION.cff)):
 
 > de la Hoz, E., Machado Zurita, S., & de la Cruz Piris, L. (2026). *TCP Trace Generator* (Versión 1.0.1) [Software]. Universidad de Alcalá. https://doi.org/10.5281/zenodo.23293176
+
+### Agradecimientos
+Este trabajo ha contado con el apoyo del proyecto de innovación docente UAH/EV1827, «Hacia una Integración Crítica y Ética de la Inteligencia Artificial Generativa en el Aprendizaje en 'Laboratorio de Redes, Sistemas y Servicios'», financiado por la Universidad de Alcalá en su convocatoria de Proyectos de Innovación Docente 2026.
 
 ### Licencia
 Este proyecto se distribuye bajo la [licencia MIT](LICENSE).
